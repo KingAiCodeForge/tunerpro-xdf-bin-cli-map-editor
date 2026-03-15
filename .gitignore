@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Test outputs and temp files
+output/
+ignore/
+*.edited.tmp
+*.bin
+*.log
+!README.md
+!AI_TUNING_PLAN.md
+!GENERAL_INFO_*.MD
+
+# One-off search/debug scripts (not part of the CLI tool)
+_search_chats.py
+_search_chats2.py
+copy_missing_bins.py
+find_austausch_files.py
+find_defs_and_a2l.py
+ms45_xdf_bin_combo_tester.py
+search_austausch_json.py
+search_m54b22.py
+search_ms42.py
+search_ms42_deep.py
+search_repos.py
+search_trans_fast.py
+search_transmission.py
+compare_eu_bins.py
+diff_eu3_vs_eu2.py
+scan_eu2_params.py
+_search_chats.py
+_search_chats2.py
+
+# Local test runner (hardcoded paths to local BIN/XDF files)
+run_test_suite.py
+
+# Large planning/chat archives (not needed for tool function)
+planchatgpt.md
+
+# Local test runner with hardcoded paths
+run_test_suite.py
+copilot-instructions-OLD-transcript.md
+
+# Private dev notes
+DEV_NOTES_PRIVATE.md
+
+# Local test runner with hardcoded paths
+run_test_suite.py

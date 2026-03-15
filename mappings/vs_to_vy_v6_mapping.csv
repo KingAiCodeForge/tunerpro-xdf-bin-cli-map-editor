@@ -1,0 +1,7 @@
+src_name,dst_name,notes
+"Spark - Main Spark Advance - High Octane","Main High-Octane Spark Table < 4800 RPM","CONVERT: VS formula X*0.351565 → VY formula X/256*90-35"
+"Spark - Main Spark Advance - High Octane >4800RPM","Main High-Octane Spark Table > 4800 RPM","CONVERT: formula difference"
+"Spark - Main Spark Advance - Low Octane","Main Low-Octane Spark Table < 4800 RPM","CONVERT: formula difference"
+"Power Enrichment - Fuel Air Ratio Vs Coolant","PE Commanded AFR Vs Coolant Temperature","DIRECT: both AFR, stock 12.80:1"
+"Injector - Offset Vs. Battery Voltage","Injector Offset Vs Battery Voltage","CONVERT: VS ms=X/65.536 → VY ms=X/260/256*1000"
+"Injector - Low Pulse Width Injector Offset Vs Base Pulse Width","Low Pulse Width Injector Offset Vs Base Pulse Width","DIRECT"
