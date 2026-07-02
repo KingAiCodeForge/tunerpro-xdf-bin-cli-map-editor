@@ -4,19 +4,19 @@
  KingAI TunerPro XDF + BIN Universal Exporter
 ===============================================================================
  
- Universal XDF to Text Exporter - Enhanced Beyond TunerPro
+ XDF + BIN export helper for regression testing and automation
  
- Supports ALL XDF format variations:
+ Supports a broad set of XDF format variations:
  - Standard format (mmedaddress, mmedelementsizebits)
  - Alternative format (mmedtypeflags)
  - Different element types (XDFCONSTANT, XDFFLAG, XDFTABLE, XDFHEADER)
  - Various structural variations (title/table/mem/desc/setups)
  
- Output Format: TunerPro-compatible PLUS enhancements
+ Output Format: TunerPro-style text plus automation-friendly exports
  - Clean header with SOURCE FILE and SOURCE DEFINITION
  - SCALAR: format (single line, right-aligned)
  - FLAG: format (simple "Set" or "Not Set")
- - TABLE: format with FULL DATA EXTRACTION (not just headers)
+ - TABLE: format with resolved data for verified XDF/BIN fixtures
    * Complete data matrices (all cell values)
    * X-axis and Y-axis label values displayed
    * Statistical analysis (min/max/avg/unique count)
@@ -26,12 +26,12 @@
  - Case-insensitive math evaluation
  - Comprehensive validation and error handling
  
- Enhancements over TunerPro:
- ✅ Full table data extraction (TunerPro only shows headers)
- ✅ Axis value display (TunerPro doesn't show these)
+ Automation features:
+ ✅ Table data extraction for verified fixtures
+ ✅ Axis value display when axis data resolves correctly
  ✅ Statistical analysis (min/max/avg for validation)
  ✅ Zero-value detection (catches XDF/BIN mismatches)
- ✅ Data integrity warnings (prevents bad tunes)
+ ✅ Data integrity warnings
  ✅ Multiple output formats (TXT, JSON, MD, TEXT)
  needs adding - full xdf meta data and address and constants and cpu address for high and low banked binarys? maybe a v2 for this with more handling 
 ===============================================================================
@@ -105,6 +105,33 @@ def safe_print(text: str):
         for char, replacement in replacements.items():
             text = text.replace(char, replacement)
         print(text.encode('ascii', 'replace').decode('ascii'))
+
+
+def clean_output_text(value: Any) -> str:
+    """Normalize common mojibake/replacement symbols for plain evidence exports."""
+    if value is None:
+        return ""
+    text = str(value)
+    replacements = {
+        "Ã‚Â°": "deg ",
+        "Â°": "deg ",
+        "\ufffd": "deg ",
+        chr(0xB0): "deg ",
+        "Ãƒâ€”": "x",
+        "Ã—": "x",
+        chr(0xD7): "x",
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    if "deg " in text:
+        text = " ".join(text.split())
+    return text
+
+
+def ensure_output_parent(output_path: str) -> None:
+    parent = Path(output_path).parent
+    if str(parent) not in ("", "."):
+        parent.mkdir(parents=True, exist_ok=True)
 
 
 __version__ = "3.5.0"  # No truncation: full titles, full descriptions, proper decimalpl everywhere, address column in MD bitshift fixes
@@ -199,7 +226,7 @@ class UniversalXDFExporter:
         so the presentation order changes without altering raw data.
 
         Args:
-            table_data: 2D list of floats (rows × cols)
+            table_data: 2D list of floats (rows x cols)
             axes: dict with 'x', 'y', 'z' axis info
 
         Returns:
@@ -979,9 +1006,10 @@ class UniversalXDFExporter:
         """
         Extract and process axis label values.
         
-        Supports two methods:
+        Supports three methods:
         1. embedinfo linking (MS42/MS43 style) - axis values from linked table
-        2. Direct LABEL values (VY V6/legacy style) - hardcoded in XDF
+        2. Embedded axis breakpoint data (TunerPro type=1/common MS45 style)
+        3. Direct LABEL values (VY V6/legacy style) - hardcoded in XDF
         
         Args:
             axis_elem: XDF XDFAXIS element
@@ -997,10 +1025,17 @@ class UniversalXDFExporter:
                 linked_values = self._resolve_embedinfo_axis(axis_elem)
                 if linked_values:
                     return linked_values
-        
-        # Method 2: Direct LABEL extraction (VY V6/legacy XDFs)
+
+        # Method 2: embedded breakpoint values at mmedaddress.
+        # TunerPro commonly uses <embedinfo type="1" /> plus EMBEDDEDDATA
+        # for axes that live in the calibration, as in MS45 RPM/load axes.
+        embedded_values = self._resolve_embedded_axis_values(axis_elem)
+        if embedded_values:
+            return embedded_values
+
+        # Method 3: Direct LABEL extraction (VY V6/legacy XDFs)
         labels = []
-        
+
         # Get math equation for labels
         math_elem = axis_elem.find('.//MATH')
         equation = None
@@ -1038,6 +1073,88 @@ class UniversalXDFExporter:
                 continue
         
         return labels
+
+    def _resolve_embedded_axis_values(self, axis_elem) -> List[float]:
+        """
+        Resolve axis labels from an axis EMBEDDEDDATA mmedaddress.
+
+        This covers TunerPro axes with <embedinfo type="1" /> as well as
+        generated XDF axes that omit embedinfo but still contain a real axis
+        address and indexcount. Z axes are skipped because their EMBEDDEDDATA
+        is table data, not row/column labels.
+        """
+        if axis_elem.get('id') == 'z':
+            return []
+
+        embedded = axis_elem.find('.//EMBEDDEDDATA')
+        if embedded is None:
+            return []
+
+        addr_str = embedded.get('mmedaddress', '')
+        if not addr_str:
+            return []
+        try:
+            address = int(addr_str, 16) if addr_str.startswith('0x') else int(addr_str)
+        except ValueError:
+            return []
+
+        count_elem = axis_elem.find('.//indexcount')
+        if count_elem is None or not count_elem.text:
+            return []
+        try:
+            count = int(count_elem.text.strip())
+        except ValueError:
+            return []
+        if count <= 0 or count > 4096:
+            return []
+
+        try:
+            size_bits = int(embedded.get('mmedelementsizebits', '8'))
+        except ValueError:
+            size_bits = 8
+        byte_size = max(1, size_bits // 8)
+
+        try:
+            major_stride_bits = int(embedded.get('mmedmajorstridebits', '0'))
+        except ValueError:
+            major_stride_bits = 0
+        byte_stride = max(byte_size, major_stride_bits // 8 if major_stride_bits else byte_size)
+
+        signed = False
+        lsb_first = False
+        flags_str = embedded.get('mmedtypeflags', '0x00')
+        try:
+            flags = int(flags_str, 16) if flags_str.startswith('0x') else int(flags_str)
+            signed = bool(flags & 0x01)
+            lsb_first = bool(flags & 0x02)
+        except ValueError:
+            pass
+
+        math_elem = axis_elem.find('.//MATH')
+        equation = math_elem.get('equation', '') if math_elem is not None else ''
+        linked_vars = self._resolve_linked_vars(math_elem) if math_elem is not None else {}
+
+        values = []
+        for index in range(count):
+            raw = self.read_value_from_bin(
+                address + (index * byte_stride),
+                size_bits,
+                signed=signed,
+                lsb_first=lsb_first
+            )
+            if raw is None:
+                return []
+            if equation:
+                value, _ = self.evaluate_math(
+                    equation,
+                    raw,
+                    linked_vars=linked_vars
+                )
+                values.append(float(value if value is not None else raw))
+            else:
+                values.append(float(raw))
+
+        return values
     
     def _extract_tables(self):
         """Extract all tables (2D/3D lookup tables)"""
@@ -1625,6 +1742,7 @@ class UniversalXDFExporter:
             bool: True if successful
         """
         try:
+            ensure_output_parent(output_path)
             with open(output_path, 'w', encoding='utf-8') as f:
                 # Write TunerPro-style header
                 f.write("=" * 60 + "\n")
@@ -1838,7 +1956,7 @@ class UniversalXDFExporter:
                                 cols = len(table_data[0])
                                 f.write(
                                     f"  Data Matrix "
-                                    f"({len(table_data)} rows × {cols} cols):\n"
+                                    f"({len(table_data)} rows x {cols} cols):\n"
                                 )
                                 
                                 # Get decimal places for formatting
@@ -1973,6 +2091,7 @@ class UniversalXDFExporter:
             bool: True if successful
         """
         try:
+            ensure_output_parent(output_path)
             export_data = {
                 'metadata': {
                     'source_file': self.bin_path.name,
@@ -2163,6 +2282,7 @@ class UniversalXDFExporter:
             bool: True if successful
         """
         try:
+            ensure_output_parent(output_path)
             with open(output_path, 'w', encoding='utf-8') as f:
                 # Header
                 f.write(f"# ECU Calibration Export\n\n")
@@ -2215,9 +2335,9 @@ class UniversalXDFExporter:
                     
                     decimalpl = const.get('decimalpl', 2)
                     val_str = f"{value:.{decimalpl}f}" if isinstance(value, float) else str(value)
-                    unit = const['unit'] or '-'
-                    cat = const['category'] or 'Uncategorized'
-                    title = const['title'].replace('|', '\\|')
+                    unit = clean_output_text(const['unit'] or '-')
+                    cat = clean_output_text(const['category'] or 'Uncategorized')
+                    title = clean_output_text(const['title']).replace('|', '\\|')
                     addr_str = f"0x{const['address']:04X}" if const['address'] is not None else '-'
                     
                     f.write(f"| {title} | {val_str} | {unit} | {addr_str} | {cat} |\n")
@@ -2243,11 +2363,12 @@ class UniversalXDFExporter:
                 f.write(f"\n---\n\n## Tables\n\n")
                 
                 for i, table in enumerate(self.elements['tables'], 1):
-                    title = table['title']
+                    title = clean_output_text(table['title'])
                     f.write(f"### {i}. {title}\n\n")
                     
                     # Table metadata
-                    f.write(f"**Category:** {table['category'] or 'Uncategorized'}\n\n")
+                    category = clean_output_text(table['category'] or 'Uncategorized')
+                    f.write(f"**Category:** {category}\n\n")
                     
                     # Axes info
                     axes = table['axes']
@@ -2255,7 +2376,8 @@ class UniversalXDFExporter:
                         f.write(f"**Axes:**\n")
                         for axis_id, axis in axes.items():
                             axis_name = {'x': 'X-Axis', 'y': 'Y-Axis', 'z': 'Z-Axis (Data)'}.get(axis_id, axis_id)
-                            unit = f" ({axis['unit']})" if axis['unit'] else ""
+                            unit_text = clean_output_text(axis['unit'])
+                            unit = f" ({unit_text})" if unit_text else ""
                             f.write(f"- {axis_name}: {axis['count']} points{unit}\n")
                         f.write("\n")
                     
@@ -2272,13 +2394,13 @@ class UniversalXDFExporter:
                         flat = [v for row in table_data
                                 for v in row]
                         if flat and not self.no_stats:
-                            z_unit = axes.get('z', {}).get('unit', '')
+                            z_unit = clean_output_text(axes.get('z', {}).get('unit', ''))
                             z_dp = axes.get('z', {}).get('decimalpl', 2)
                             f.write(f"**Statistics:**\n")
                             f.write(f"- Min: {min(flat):.{z_dp}f} {z_unit}\n")
                             f.write(f"- Max: {max(flat):.{z_dp}f} {z_unit}\n")
                             f.write(f"- Avg: {statistics.mean(flat):.{z_dp}f} {z_unit}\n")
-                            f.write(f"- Dimensions: {len(table_data)} × {len(table_data[0])}\n\n")
+                            f.write(f"- Dimensions: {len(table_data)} x {len(table_data[0])}\n\n")
                         
                         # Full Data Table (all rows and columns)
                         if len(table_data) > 0 and len(table_data[0]) > 0:
@@ -2286,7 +2408,7 @@ class UniversalXDFExporter:
                             z_decimalpl = axes.get('z', {}).get('decimalpl', 2)
                             y_decimalpl = axes.get('y', {}).get('decimalpl', 2)
                             
-                            f.write(f"**Full Data Table** ({len(table_data)} rows × {cols} cols):\n\n")
+                            f.write(f"**Full Data Table** ({len(table_data)} rows x {cols} cols):\n\n")
                             
                             # Get X-axis labels for header if available
                             x_labels = axes.get('x', {}).get('labels', [])
@@ -2387,6 +2509,7 @@ class UniversalXDFExporter:
         """
         import csv
         try:
+            ensure_output_parent(output_path)
             with open(output_path, 'w', newline='',
                        encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -2560,7 +2683,7 @@ def main():
         print(f"  python {sys.argv[0]} def.xdf fw.bin export.txt --flip-rpm")
         print()
         print("Features:")
-        safe_print("  ✅ Full table data extraction (TunerPro fails at this!)")
+        safe_print("  ✅ Table data extraction for verified fixtures")
         safe_print("  ✅ Axis label values displayed")
         safe_print("  ✅ Statistical analysis (min/max/avg)")
         safe_print("  ✅ Data integrity validation")

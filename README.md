@@ -6,9 +6,11 @@
 
 ---
 
-## Verified Test Results (March 2026)
+## Compatibility Snapshot (March 2026)
 
-All commands tested against real XDF+BIN pairs from three ECU platforms:
+These are local regression fixtures used while developing the CLI. Treat them
+as a snapshot, not a guarantee that every later XDF or TunerPro build behaves
+the same way.
 
 | Platform | XDF | Constants | Tables | Flags | Patches | BIN Size |
 |----------|-----|-----------|--------|-------|---------|----------|
@@ -16,7 +18,11 @@ All commands tested against real XDF+BIN pairs from three ECU platforms:
 | **BMW MS43 430069** | Siemens_MS43_430069_512K_1.1.3v.xdf | 2,256 | 1,454 | 0 | 0 | 512KB |
 | **Holden VY V6 $060A** | VX VY_V6_$060A_Enhanced_v2.09a.xdf | 1,310 | 330 | 351 | 3 | 128KB |
 
-**Commands verified:**
+**Important:** the VY/VX Enhanced `v2.09` family needs fresh verification
+against current TunerPro behavior and the current public XDFs. Do not make a
+compatibility claim for that XDF until the regression set proves it.
+
+**Commands covered in the snapshot:**
 - `show-map` — MAF table `id_maf_tab` (256x1, equation `0.015625*X`, values in kg/h) ✓
 - `edit` — 3-cell write: rows 5-7 of `id_maf_tab`, old_raw 317/330/343 → new_raw 384 ✓
 - `diff` — Exactly 3 bytes changed at file offsets 0x497AE-0x497B2 (XDF addr + BASEOFFSET 0x48000) ✓
@@ -28,7 +34,21 @@ All commands tested against real XDF+BIN pairs from three ECU platforms:
 
 ## What This Is
 
-A strict, deterministic CLI tool for editing ECU calibration data (BIN files) using XDF definition files. Every command is predictable, every change is logged, and original files are never modified.
+A strict, deterministic CLI tool for reading, auditing, editing, and porting ECU calibration data (BIN files) using TunerPro XDF definition files. Every command is predictable, every change is logged, and original files are never modified.
+
+The parser is intended to be ECU-family neutral, but compatibility must be proven per XDF/BIN pair. BMW MS42/MS43/MS45, Holden/GM V6/V8, Ford/Barra-adjacent Bosch work, and other XDF-defined projects can use different addressing, axis, math, and patch conventions. This tool does not replace TunerPro validation, and it does not handle checksums, RSA signing, flashing safety, or every XDF variation by itself.
+
+### XDF Iteration + Reverse Engineering Workflow
+
+This tool is also useful while building or repairing XDFs during reverse engineering. A practical loop is:
+
+1. Load the firmware in Ghidra/IDA and use Ghidra `analyzeHeadless` to export labels, xrefs, immediate-hit windows, and function context.
+2. Add or adjust candidate XDF entries from RR/A2L/DAMOS/ASM evidence.
+3. Run this CLI/exporter against the candidate XDF + matching BIN.
+4. Check whether axes, dimensions, units, endian, signedness, and table values look sane.
+5. Diff the export against known-good stock/stage files and repeat until the XDF is stable.
+
+That makes it a fast feedback tool for XDF development: disassembly finds likely addresses and code-use, while the exporter shows whether the candidate XDF renders consistently as editable calibration data. Final truth still comes from comparing against TunerPro, known-good bins, and platform-specific test fixtures.
 
 Built specifically for AI agent workflows — Copilot, Claude, ChatGPT, or any LLM that can run shell commands. The agent reads maps, edits cells, ports calibrations between firmware versions, and reviews diffs, all through structured CLI output that's easy to parse programmatically.
 
@@ -56,7 +76,7 @@ The few open-source alternatives are read-only or incomplete:
 | **xdfbinext** (jtownson) | XDF+BIN diff reports, MHD logging | Read-only comparison, no editing |
 | **OpenECU Calibrator** | CAN-based real-time calibration | Requires specific hardware, not XDF-based |
 
-None of these can read a fuel map from a BIN, change three cells, write back a new timestamped BIN with a TunerPro-compatible edit log, and port calibration between firmware versions — all from a command line that an AI agent can operate. This tool can.
+This project targets a narrower gap: local, scriptable calibration workflow. The goal is to read a map from a BIN, change selected cells, write a timestamped BIN, produce an auditable edit log, and compare or port calibration data from a command line that an AI agent can operate.
 
 ### What About "ChatGPT Tuning"?
 
@@ -98,13 +118,13 @@ This is not a consumer product. It's infrastructure — the open-source backbone
 
 **Developers and integrators** — Fork this, add your own LLM credentials and frontend, wrap it in a REST API or MCP tool server, and build a commercial or open-source tuning platform on top. The CLI produces structured output that's trivial to integrate.
 
-**Tuners and researchers** — Use it today with VS Code + Copilot or any terminal-capable LLM to read, analyze, compare, and modify calibrations without touching a GUI. Works on any platform with any XDF+BIN pair.
+**Tuners and researchers** - Use it today with VS Code + Copilot or any terminal-capable LLM to inspect and compare calibration data. Editing/write-back should stay inside a verified fixture set until the target XDF/BIN pair passes preflight, export sanity checks, TunerPro comparison, and human review.
 
-**Will commercial vendors like HP Tuners or Alientech use this?** — Probably not directly. They build in C/C++ with encrypted proprietary libraries and hardware-locked license dongles. But their users will. The community of tuners, researchers, and hobbyists who can't afford thousands in hardware and annual subscriptions — or who need programmable access that vendor tools deliberately don't provide — is exactly who benefits from open-source tooling. And developers building the next WinOLS alternative now have a proven read/write/port/diff engine they don't have to write from scratch.
+**Will commercial vendors like HP Tuners or Alientech use this?** — Probably not directly. They build in C/C++ with encrypted proprietary libraries and hardware-locked license dongles. The likely audience is developers, tuners, researchers, and hobbyists who need programmable access for verified XDF/BIN pairs and want an auditable local toolchain.
 
 ### Parsing Engine
 
-This tool reuses the proven **UniversalXDFExporter** engine ([TunerPro-XDF-BIN-Universal-Exporter](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter)) for all XDF parsing, BIN reading, math evaluation, BASEOFFSET handling, embedinfo axis linking, and linked variable resolution. Improvements flow both ways — fixes in the exporter get pulled here, and vice versa. The CLI editor adds write-back, porting, cross-platform table matching, and TunerPro-compatible edit logging on top.
+This tool reuses the **UniversalXDFExporter** engine ([TunerPro-XDF-BIN-Universal-Exporter](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter)) for XDF parsing, BIN reading, math evaluation, BASEOFFSET handling, embedinfo axis linking, and linked variable resolution. Improvements flow both ways — fixes in the exporter get pulled here, and vice versa. The CLI editor adds write-back, porting, cross-platform table matching, and TunerPro-style edit logging on top.
 
 ---
 
@@ -331,7 +351,7 @@ The exporter resolves these automatically via uniqueid index.
 
 ## Acknowledgments
 
-**Mark Mansur** — creator of [TunerPro RT](http://www.tunerpro.net/). TunerPro has been the go-to free ECU tuning platform for over two decades. The XDF definition format that this entire tool ecosystem is built on exists because Mark designed it and maintained TunerPro through years of community use across every platform from OBD1 GM trucks to Siemens MS4x BMW DMEs. Without TunerPro and the XDF format, none of this would exist. If you're in a position to support his work, get the registered edition.
+**Mark Mansur** — creator of [TunerPro RT](http://www.tunerpro.net/). This project is not affiliated with TunerPro; it exists because TunerPro and the XDF format made community calibration work possible. TunerPro continues to evolve, so this tool should be validated against current TunerPro builds and current XDFs before any compatibility claim is made. If you're in a position to support Mark's work, get the registered edition.
 
 **The XDF community** — the tuners, reverse engineers, and enthusiasts who have built, refined, and shared XDF definition files for hundreds of ECU platforms over the years. Every verified address, every corrected axis link, every documented equation in an XDF represents hours of someone's time with a hex editor and a running engine. This tool stands on that collective work.
 
