@@ -33,6 +33,24 @@ promote every similarly named file: some retained full-image lineages contain
 known damaged code bytes. Vehicle-tested behaviour must be tied to the exact
 artifact hash and readback before reuse.
 
+For the narrow `0110C6` ghost-cam family, the exact full-image exclusions are:
+
+- SHA-256 `F6E6B2DCC1D36BD5657B519FFC86D0F4F7CBEA656DAB69465271C3958675F0C4`
+  contains the intended 84 calibration bytes but also inherits a broken C166
+  `CALLS` first half at file offsets `0x709AE-0x709AF`;
+- SHA-256 `A2305997E204E71D6D10478055871049B82A439CE1A8532485678B5FE11FD3DD`
+  inherits that code fault and adds 108 writes exactly `0x48000` below the
+  intended map bodies; and
+- the retained patch-test image has the 108 misplaced writes but none of the
+  intended calibration change.
+
+All three are `DO_NOT_FLASH` and must not be used as full-image donors. A clean
+reconstruction may use the five named-map values as reference data, but must
+apply them through the matching XDF to the independently clean stock parent,
+then prove that no program byte or unexplained calibration byte changed. The
+owner's in-car observation remains unassigned until its actual post-flash or
+readback hash is recovered.
+
 ## Required identity before any edit
 
 ```yaml
@@ -166,6 +184,14 @@ ignition, lambda, misfire/roughness, coolant and A/C/load state.
 Success requires hot/cold restart, no stalls, stable oil pressure, acceptable
 lambda/misfire behaviour and clean transition out of idle. A sound change is
 not a dyno gain.
+
+For `0110C6` B28 EU3 the current clean comparison parent is SHA-256
+`65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`.
+Use the exact five-map reconstruction as a forensic parity target first; make
+any milder blend as a separate candidate, never by editing one of the damaged
+F6/A230 full images. This does not make the reconstructed file flash-ready:
+checksum correction, native TunerPro visual review, vehicle identity,
+read/write/recovery and logged tests remain separate gates.
 
 ### 3. DISA transition experiment
 
