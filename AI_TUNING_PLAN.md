@@ -24,6 +24,8 @@ Platform-specific tuning guidance is deliberately split. Use:
 
 - [`HOLDEN_AI_TUNING_GUIDE.md`](HOLDEN_AI_TUNING_GUIDE.md) for Holden/Delco work;
 - [`BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md`](BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md) for BMW MS42, stock MS43 and MS43X.
+- [`PATCH_REBUILD_REGISTER.md`](PATCH_REBUILD_REGISTER.md) for the current
+  patch/formula withdrawal, rebuild, bench and trace queue.
 
 Those guides contain the current evidence labels, effect experiments and
 copy/paste AI request templates. This file is the implementation roadmap. A

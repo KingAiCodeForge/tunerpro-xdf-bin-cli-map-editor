@@ -141,6 +141,7 @@ tunerpro-xdf-bin-cli-map-editor/
 ├── AI_TUNING_PLAN.md                               # AI agent tuning workflow plan
 ├── HOLDEN_AI_TUNING_GUIDE.md                       # Holden effect tests and patch rebuild prompts
 ├── BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md          # BMW effect tests and patch rebuild prompts
+├── PATCH_REBUILD_REGISTER.md                       # Current legacy patch/formula rebuild queue
 ├── GENERAL_INFO_FOR_MS42.MD                        # MS42 ECU specs, maps, firmware, flash tools
 ├── GENERAL_INFO_FOR_MS43.MD                        # MS43 ECU specs, maps, firmware, flash tools
 ├── GENERAL_INFO_FOR_MS45.MD                        # MS45 ECU specs, maps, firmware, flash tools
@@ -282,6 +283,7 @@ changes:
 
 - [`HOLDEN_AI_TUNING_GUIDE.md`](HOLDEN_AI_TUNING_GUIDE.md)
 - [`BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md`](BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md)
+- [`PATCH_REBUILD_REGISTER.md`](PATCH_REBUILD_REGISTER.md)
 
 They contain evidence grades, effect-oriented request examples and the rule to
 rebuild legacy patches/formulas from the latest disassembly and tracing.
