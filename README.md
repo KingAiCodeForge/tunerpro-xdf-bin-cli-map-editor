@@ -139,6 +139,8 @@ tunerpro-xdf-bin-cli-map-editor/
 ├── FUTURE_PATHS_AND_IDEAS.md                       # Roadmap and integration ideas
 ├── LICENSE                                         # MIT License
 ├── AI_TUNING_PLAN.md                               # AI agent tuning workflow plan
+├── HOLDEN_AI_TUNING_GUIDE.md                       # Holden effect tests and patch rebuild prompts
+├── BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md          # BMW effect tests and patch rebuild prompts
 ├── GENERAL_INFO_FOR_MS42.MD                        # MS42 ECU specs, maps, firmware, flash tools
 ├── GENERAL_INFO_FOR_MS43.MD                        # MS43 ECU specs, maps, firmware, flash tools
 ├── GENERAL_INFO_FOR_MS45.MD                        # MS45 ECU specs, maps, firmware, flash tools
@@ -274,6 +276,15 @@ python cli_map_editor.py diff --bin-a original.bin --bin-b edited.bin
 ---
 
 ## Safety Rules
+
+Use the platform guide before asking an AI to propose calibration or patch
+changes:
+
+- [`HOLDEN_AI_TUNING_GUIDE.md`](HOLDEN_AI_TUNING_GUIDE.md)
+- [`BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md`](BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md)
+
+They contain evidence grades, effect-oriented request examples and the rule to
+rebuild legacy patches/formulas from the latest disassembly and tracing.
 
 1. **Never modify original BIN files** — all writes go to temp or timestamped outputs
 2. **Run `preflight` before any edits** — catches address errors, overlaps, mismatches
