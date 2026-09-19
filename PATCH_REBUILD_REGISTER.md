@@ -20,6 +20,7 @@ Use these queue states:
 | `BENCH_NEXT` | Strong static byte contract exists; controlled execution/readback is the next evidence gate. |
 | `HOLD_FOR_TRACE` | Required producer/consumer, runtime state, or hardware behavior remains unresolved. |
 | `LEGACY_REFERENCE` | Preserve hash and diff for provenance only. |
+| `STATIC_PROVED` | Exact lineage, bounded diff and offline integrity checks pass; physical write/readback or vehicle proof is still open. |
 
 No state in this document means flash-ready or vehicle-tested.
 
@@ -176,12 +177,20 @@ Canonical clean M52TUB28 EU3 RHD parent SHA-256:
   `9FDA5433BFBA7DDAAC9F0D935662E1579DF0099B38F1B91F603F965B78E90889`;
   axes remain stock and the code sentinel at `0x709AE` remains
   `DA 06 82 08`.
-- Current candidate SHA-256:
+- Pre-checksum CLI output SHA-256:
   `8EEB90CB61FE9373C338FEE17686AE272AA22F2E8E0BE5FA6631B24AAF877B49`.
-- Action: retain as `REBUILD_FIRST` / `CHECKSUM_PENDING`. Native TunerPro
-  review, exact `0110C6` checksum correction, retained corrected hash,
-  readback/recovery and logged pedal/requested/actual-throttle proof are still
-  required before bench or vehicle use.
+- Exact `0110C6` CAL-CRC repair changes only `0x4FEE0-0x4FEE1`. The corrected
+  candidate SHA-256 is
+  `BABE46932DEA70FE7796E7441F2C176CC9D009DCA17F3249098CE46AD488E4A6`
+  and differs from the parent at 418 bytes: the 416 table bytes plus two stored
+  CAL-CRC bytes. Boot `0xDF13`, CAL `0x14D6` and program `0xF347` all verify.
+- The exact profile uses boot seed `0x2D2D`, `0110C6` CAL seed `0x3643` and
+  program seed `0x3030`, with descriptor validation across four distinct
+  pinned, checksum-valid `0110C6` stock/reference images. Twelve focused
+  checksum tests pass.
+- Action: retain as `STATIC_PROVED`, not flash-approved. Native TunerPro
+  review, exact-DME matching, recovery, physical write/readback and logged
+  pedal/requested/actual-throttle proof remain open.
 
 ### P2 — first MS42 ASM proof
 
@@ -198,6 +207,8 @@ Canonical clean M52TUB28 EU3 RHD parent SHA-256:
   and compare an unpatched DME as the negative control. The retained ADX
   automatically switches to 125000 baud; keep it as a later high-speed
   reference and do not combine baud-bypass or speed patches in the first test.
+  The exact `0110C6` checksum profile is now available; a retained patched
+  output hash, verification result, readback and recovery proof are not.
 
 ## Stock BMW MS43 `430069`
 
@@ -345,8 +356,9 @@ their program regions forward wholesale.
    fixture.
 4. Build a common identity/layout/patch-manifest validator before producing
    new direct-patch binaries.
-5. Native-check and checksum the bounded MS42 throttle reconstruction; retain
-   the five-map ghost-cam body for signedness/axis forensics only.
+5. Native-check the checksum-valid, bounded MS42 throttle reconstruction and
+   complete its exact-DME/recovery/write-readback gates; retain the five-map
+   ghost-cam body for signedness/axis forensics only.
 6. Rebuild the MS42 DS2 logger, VY stationary launch and stock-MS43 cruise
    selector as the first exact-parent patch examples.
 7. Bench the strongest retained VY v47/v48/v51 and ghost-cam candidates after

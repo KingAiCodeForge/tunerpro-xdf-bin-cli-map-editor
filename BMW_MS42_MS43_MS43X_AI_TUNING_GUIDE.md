@@ -177,10 +177,14 @@ The result changes 416 bytes inside the two 288-byte map bodies; both output
 bodies have SHA-256
 `9FDA5433BFBA7DDAAC9F0D935662E1579DF0099B38F1B91F603F965B78E90889`,
 axes stay stock and the clean `DA 06 82 08` code sentinel at `0x709AE` is
-preserved. Candidate SHA-256 is
+preserved. The pre-checksum CLI output is
 `8EEB90CB61FE9373C338FEE17686AE272AA22F2E8E0BE5FA6631B24AAF877B49`.
-It remains `CHECKSUM_PENDING`, so this is reproducible static evidence rather
-than flash approval.
+Exact 0110C6 CAL-CRC repair changes only `0x4FEE0..0x4FEE1`, giving final
+SHA-256 `BABE46932DEA70FE7796E7441F2C176CC9D009DCA17F3249098CE46AD488E4A6`
+and 418 total parent differences. All three stored CRCs then verify. This is
+`STATIC_PROVED`, not flash approval: it remains an aggressive EU3 request-map
+experiment and still needs native TunerPro parity, exact-DME matching,
+recovery, write/readback and logged vehicle tests.
 
 ### 2. Mild ghost-cam/idle-effect candidate
 
@@ -277,8 +281,13 @@ matching M52TUB28 ADX currently has SHA-256
 `2BFE535BB6CC9E628B6ED740CC355794CBED1E3EF1DEA46D460CB8446F7C8B46`.
 That ADX automatically switches to 125000 baud, so treat it as a later
 high-speed reference rather than the first manual proof. The firmware patch
-remains a bench-only candidate until an exact `0110C6` checksum profile or
-retained MS4X-Flasher correction, patched readback and recovery proof exist.
+remains a bench-only candidate. The exact `0110C6` CRC profile is now
+independently reproduced across four distinct pinned, checksum-valid `0110C6`
+stock/reference images: boot seed `0x2D2D`, CAL seed `0x3643` and program seed
+`0x3030`, with exact descriptor validation.
+This removes the offline checksum unknown, but the patch still needs a retained
+patched-output hash, checksum result, physical DME readback, request/reply trace
+and recovery proof.
 
 ### 8. Overrun sound / A-C or cruise selector
 
