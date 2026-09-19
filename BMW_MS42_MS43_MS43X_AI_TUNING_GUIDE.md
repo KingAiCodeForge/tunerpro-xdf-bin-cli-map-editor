@@ -168,6 +168,20 @@ Success is a repeatable reduction in pedal-to-throttle delay with no oscillation
 surge, plausibility fault or unintended full-throttle request. This can be a
 good first CLI-generated test because it can remain separate from fuel/spark.
 
+The current bounded `0110C6` B28 EU3 reconstruction follows this method. It
+ports only `ip_tps_sp_pvs_tco_1__pvs__n` and
+`ip_tps_sp_pvs_tco_2__pvs__n` from the owner-linked source onto clean parent
+SHA-256
+`65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`.
+The result changes 416 bytes inside the two 288-byte map bodies; both output
+bodies have SHA-256
+`9FDA5433BFBA7DDAAC9F0D935662E1579DF0099B38F1B91F603F965B78E90889`,
+axes stay stock and the clean `DA 06 82 08` code sentinel at `0x709AE` is
+preserved. Candidate SHA-256 is
+`8EEB90CB61FE9373C338FEE17686AE272AA22F2E8E0BE5FA6631B24AAF877B49`.
+It remains `CHECKSUM_PENDING`, so this is reproducible static evidence rather
+than flash approval.
+
 ### 2. Mild ghost-cam/idle-effect candidate
 
 The screenshot evidence shows that the observed effect was not just an idle
@@ -192,6 +206,14 @@ any milder blend as a separate candidate, never by editing one of the damaged
 F6/A230 full images. This does not make the reconstructed file flash-ready:
 checksum correction, native TunerPro visual review, vehicle identity,
 read/write/recovery and logged tests remain separate gates.
+
+There is an additional unresolved parity issue: the reviewed TunerPro image
+shows negative idle-ignition correction values and different error-axis
+breakpoints in several columns, while the current local F6/A230 body retains
+the stock axis and the CLI export interprets raw bytes `C9/BD/...` as positive
+values. The 84-byte raw reconstruction is therefore held for forensic review;
+it is not the first test candidate until native TunerPro signedness and axis
+parity are resolved.
 
 ### 3. DISA transition experiment
 
@@ -239,6 +261,24 @@ safe restoration. Do not implement hardcut by globally zeroing coil dwell.
 Start ASM work with a harmless, observable patch on the exact OS, bench-read it
 back, and prove checksum/recovery before modifying ignition or injection
 scheduling. A screenshot is not enough to assemble a patch.
+
+The preferred first ASM proof is the `0110C6` DS2 Logging Feature Enhancement,
+not a hardcut, launch or combustion patch. In community patchlist v1.7.1 its
+isolated payload occupies `0x60E00` (256 bytes), `0x60F00` (200 bytes) and a
+hook at `0x20950` changing `DA 01 26 D2 0D 02` to
+`FA 06 00 0E CC 00`. Those original hook bytes match the canonical clean
+parent, but that is only static base-byte proof. The parent SHA-256 is
+`65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`.
+First bench proof should be one manual 9600-baud transaction: send the complete
+DS2 frame `12 05 0B B0 AC`, verify the `12 49 A0` reply framing, length/XOR and
+plausible values, and compare an unpatched clean DME as a negative control. Do
+not initially combine the separate baud-bypass or speed increase patches. The
+matching M52TUB28 ADX currently has SHA-256
+`2BFE535BB6CC9E628B6ED740CC355794CBED1E3EF1DEA46D460CB8446F7C8B46`.
+That ADX automatically switches to 125000 baud, so treat it as a later
+high-speed reference rather than the first manual proof. The firmware patch
+remains a bench-only candidate until an exact `0110C6` checksum profile or
+retained MS4X-Flasher correction, patched readback and recovery proof exist.
 
 ### 8. Overrun sound / A-C or cruise selector
 

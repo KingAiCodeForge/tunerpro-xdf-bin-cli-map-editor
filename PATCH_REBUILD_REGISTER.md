@@ -1,7 +1,7 @@
 # Patch and Formula Rebuild Register
 
 **Updated:** 20 September 2026
-**Scope:** Holden VY `$060A`, stock BMW MS43 `430069`, and MS43X001
+**Scope:** Holden VY `$060A`, BMW MS42 `0110C6`, stock BMW MS43 `430069`, and MS43X001
 **Status:** active rebuild queue; no legacy artifact is approved for vehicle use
 
 ## Current decision
@@ -143,6 +143,61 @@ Controlling evidence:
 - Rebuild D1 hold as an upshift-only change at file `0x0404B`. Retire the old
   `0x0404D -> FF` edit because it also raises the 2-1 downshift threshold to
   roughly 205.19 km/h.
+
+## BMW MS42 `0110C6`
+
+Canonical clean M52TUB28 EU3 RHD parent SHA-256:
+`65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`.
+
+### P0 — quarantine damaged ghost-cam full images
+
+- The F6 ghost-cam image SHA-256
+  `F6E6B2DCC1D36BD5657B519FFC86D0F4F7CBEA656DAB69465271C3958675F0C4`
+  contains the intended 84 calibration-byte delta plus a broken C166 `CALLS`
+  first half at `0x709AE-0x709AF`.
+- The A230 image SHA-256
+  `A2305997E204E71D6D10478055871049B82A439CE1A8532485678B5FE11FD3DD`
+  contains the same 84 bytes and broken call, plus 108 writes displaced exactly
+  `0x48000` below their intended maps.
+- The reviewed TunerPro image shows negative idle-ignition corrections and
+  different error-axis breakpoints, while the local bodies retain stock axes
+  and the current CLI/XDF path renders raw `C9/BD/...` as positive values.
+- Action: keep both full images `LEGACY_REFERENCE` and do not flash them. Keep
+  the five-map/84-byte reconstruction `HOLD_FOR_TRACE` until native TunerPro
+  signedness and axis parity are proved.
+
+### P1 — bounded aggressive-throttle reconstruction
+
+- Port only `ip_tps_sp_pvs_tco_1__pvs__n` and
+  `ip_tps_sp_pvs_tco_2__pvs__n` onto the clean parent. Their full-image ranges
+  are `0x4AD34-0x4AE53` and `0x4AE54-0x4AF73`.
+- The resulting delta is exactly 416 bytes inside those two 288-byte bodies.
+  Both output bodies have SHA-256
+  `9FDA5433BFBA7DDAAC9F0D935662E1579DF0099B38F1B91F603F965B78E90889`;
+  axes remain stock and the code sentinel at `0x709AE` remains
+  `DA 06 82 08`.
+- Current candidate SHA-256:
+  `8EEB90CB61FE9373C338FEE17686AE272AA22F2E8E0BE5FA6631B24AAF877B49`.
+- Action: retain as `REBUILD_FIRST` / `CHECKSUM_PENDING`. Native TunerPro
+  review, exact `0110C6` checksum correction, retained corrected hash,
+  readback/recovery and logged pedal/requested/actual-throttle proof are still
+  required before bench or vehicle use.
+
+### P2 — first MS42 ASM proof
+
+- Prefer the `0110C6` DS2 Logging Feature Enhancement over a hardcut, launch or
+  combustion patch. Community patchlist v1.7.1 places payloads at `0x60E00`
+  (256 bytes) and `0x60F00` (200 bytes), with a hook at `0x20950` changing
+  `DA 01 26 D2 0D 02` to `FA 06 00 0E CC 00`.
+- Those original hook bytes match the canonical clean parent. The matching
+  M52TUB28 ADX SHA-256 is
+  `2BFE535BB6CC9E628B6ED740CC355794CBED1E3EF1DEA46D460CB8446F7C8B46`.
+- Action: `REBUILD_FIRST` into the common exact-parent manifest. Then make one
+  manual 9600-baud bench transaction with complete DS2 frame
+  `12 05 0B B0 AC`, verify `12 49 A0` framing, length/XOR and plausible values,
+  and compare an unpatched DME as the negative control. The retained ADX
+  automatically switches to 125000 baud; keep it as a later high-speed
+  reference and do not combine baud-bypass or speed patches in the first test.
 
 ## Stock BMW MS43 `430069`
 
@@ -290,9 +345,11 @@ their program regions forward wholesale.
    fixture.
 4. Build a common identity/layout/patch-manifest validator before producing
    new direct-patch binaries.
-5. Rebuild VY stationary launch and stock-MS43 cruise selector as the first two
-   exact-parent examples.
-6. Bench the strongest retained VY v47/v48/v51 and ghost-cam candidates after
+5. Native-check and checksum the bounded MS42 throttle reconstruction; retain
+   the five-map ghost-cam body for signedness/axis forensics only.
+6. Rebuild the MS42 DS2 logger, VY stationary launch and stock-MS43 cruise
+   selector as the first exact-parent patch examples.
+7. Bench the strongest retained VY v47/v48/v51 and ghost-cam candidates after
    their remaining control-flow proofs close.
-7. Re-disassemble official MS43X releases and rebuild LC/RAL/NLS/AFR/limiter
+8. Re-disassemble official MS43X releases and rebuild LC/RAL/NLS/AFR/limiter
    behavior from compiled code.
