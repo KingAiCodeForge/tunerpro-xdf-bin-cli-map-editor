@@ -11,6 +11,8 @@ import pytest
 from raw_patch_checksum_profiles import (
     CHECKSUM_CONTRACT,
     ChecksumProfileError,
+    IMAGE_SIZE,
+    OSID_OFFSET,
     PROFILE_ID,
     TRUSTED_CHECKSUM_VERIFIERS,
     verify_bmw_ms42_0110c6_crc16,
@@ -65,6 +67,43 @@ def _context():
 
 def _by_name(result):
     return {record["name"]: record for record in result["records"]}
+
+
+def _reference_crc16(data: bytes, seed: int) -> int:
+    """Independent bitwise reference for the reflected 0x8005 profile."""
+    crc = seed & 0xFFFF
+    for value in data:
+        crc ^= value
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc & 0xFFFF
+
+
+def _synthetic_valid_image() -> bytes:
+    """Build a portable valid image without relying on private firmware bytes."""
+    image = bytearray((index * 37 + 11) & 0xFF for index in range(IMAGE_SIZE))
+    image[OSID_OFFSET:OSID_OFFSET + 6] = b"0110C6"
+    records = CHECKSUM_CONTRACT["parameters"]["records"]
+
+    for record in records:
+        offset = record["offset"]
+        segments = record["segments"]
+        image[offset + 2:offset + 4] = len(segments).to_bytes(2, "little")
+        cursor = offset + 4
+        for segment in segments:
+            image[cursor:cursor + 4] = segment["start"].to_bytes(4, "little")
+            image[cursor + 4:cursor + 8] = segment["end"].to_bytes(4, "little")
+            cursor += 8
+
+    for record in records:
+        computed = record["seed"]
+        for segment in record["segments"]:
+            computed = _reference_crc16(
+                image[segment["start"]:segment["end"] + 1], computed
+            )
+        offset = record["offset"]
+        image[offset:offset + 2] = computed.to_bytes(2, "little")
+    return bytes(image)
 
 
 def test_registry_exports_the_exact_trusted_profile():
@@ -159,3 +198,43 @@ def test_payload_only_corruption_outside_ecu_crc_still_passes(ds2_image):
 
     assert result["valid"] is True
     assert all(record["valid"] for record in result["records"])
+
+
+def test_portable_synthetic_image_passes_without_workspace_fixtures():
+    result = verify_bmw_ms42_0110c6_crc16(_synthetic_valid_image(), _context())
+    assert result["valid"] is True
+    assert all(record["valid"] for record in result["records"])
+
+
+def test_portable_synthetic_covered_corruption_is_detected():
+    corrupt = bytearray(_synthetic_valid_image())
+    corrupt[0x100] ^= 0x01
+    result = verify_bmw_ms42_0110c6_crc16(corrupt, _context())
+    assert result["valid"] is False
+    assert _by_name(result)["boot"]["valid"] is False
+
+
+def test_portable_synthetic_descriptor_and_osid_drift_fail_closed():
+    descriptor = bytearray(_synthetic_valid_image())
+    descriptor[0x5030A] ^= 0x01
+    with pytest.raises(ChecksumProfileError, match="prog descriptor mismatch"):
+        verify_bmw_ms42_0110c6_crc16(descriptor, _context())
+
+    osid = bytearray(_synthetic_valid_image())
+    osid[OSID_OFFSET] = ord("X")
+    with pytest.raises(ChecksumProfileError, match="unsupported MS42 OSID"):
+        verify_bmw_ms42_0110c6_crc16(osid, _context())
+
+
+def test_portable_synthetic_out_of_coverage_corruption_still_needs_full_hash():
+    corrupt = bytearray(_synthetic_valid_image())
+    corrupt[0x60E00] ^= 0x01
+    result = verify_bmw_ms42_0110c6_crc16(corrupt, _context())
+    assert result["valid"] is True
+
+
+def test_portable_synthetic_contract_drift_fails_closed():
+    context = _context()
+    context["parameters"]["records"][2]["seed"] ^= 1
+    with pytest.raises(ChecksumProfileError, match="does not exactly match"):
+        verify_bmw_ms42_0110c6_crc16(_synthetic_valid_image(), context)
