@@ -1,6 +1,7 @@
 """Regression tests for strict exact-image raw patch manifests."""
 
 import copy
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -193,7 +194,7 @@ def test_bounded_diff_proof_rejects_extra_byte_outside_allowlist():
 def test_cli_apply_raw_patch_smoke(tmp_path):
     _source, patched, _manifest, source_path, manifest_path = _case(tmp_path)
     output = tmp_path / "cli-patched.bin"
-    cli = Path(__file__).with_name("cli_map_editor.py")
+    cli = Path(importlib.util.find_spec("cli_map_editor").origin)
     completed = subprocess.run(
         [
             sys.executable,

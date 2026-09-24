@@ -1,4 +1,8 @@
 # Python
+.pytest_cache/
+.test-runs/
+dist-verify/
+_ai_work/
 __pycache__/
 *.py[cod]
 *$py.class

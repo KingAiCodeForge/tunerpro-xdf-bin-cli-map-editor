@@ -1,7 +1,7 @@
 # AI-Assisted ECU Tuning Plan — Log Analysis + Map Adjustment via CLI Editor
 
-**Version:** 1.1
-**Date:** 20 September 2026
+**Version:** 1.2
+**Date:** 24 September 2026
 **Author:** Jason King (KingAiCodeForge)
 **Status:** CLI editing works for proved fixtures; log-analysis commands remain planned
 
@@ -45,7 +45,7 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 
 ---
 
-## Part 1: What's Already Working (CLI Editor v1.0.0)
+## Part 1: Current release boundary (CLI Editor v1.1.0)
 
 | Capability | Status | Command |
 |---|---|---|
@@ -53,19 +53,25 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 | List all maps/scalars/flags | ✅ Done | `list-maps` |
 | Show table data with axes | ✅ Done | `show-map` |
 | Show scalar values | ✅ Done | `show-scalar` |
-| Edit table cells (single/range) | ✅ Done | `edit` |
-| Edit scalar values | ✅ Done | `edit-scalar` |
-| Batch edits from CSV | ✅ Done | `batch` |
-| Save with timestamp + project CSV edit log | ✅ Done | `save` |
+| Edit table cells (single/range) | Bounded integer layouts; no scoped MATH writes | `edit --autosave` |
+| Edit scalar values | Bounded integer/affine conversions | `edit-scalar --autosave` |
+| Edit flags | Preserve sibling bits; bounded mask | `edit-flag --autosave` |
+| Batch edits from CSV | Disabled: partial-result defect | `batch` |
+| Persist unbound temp edits | Disabled: no source/XDF binding | `save` |
 | Export snapshot (TXT/JSON/MD) | ✅ Done | `export` |
-| Port maps between ECUs | ✅ Done | `port` |
+| Port maps between ECUs | Disabled: partial-result and interpolation validation gaps | `port` |
 | Preflight validation | ✅ Done | `preflight` |
 | Byte-level BIN diff | ✅ Done | `diff` |
-| Inverse math (real→raw) | ✅ Done | Internal |
-| AFR↔Lambda conversion | ✅ Done | Internal |
-| Bilinear resample for different axes | ✅ Done | Internal |
+| Inverse math (real→raw) | Symbolically affine only; no numerical fallback | Internal |
+| AFR↔Lambda conversion | Experimental, not release-enabled | Internal |
+| Bilinear resample for different axes | Experimental, not release-enabled | Internal |
+| Exact-hash raw patches | Strict v2 manifest with optional registered checksum verifier | `verify-raw-patch`, `apply-raw-patch` |
 
-**Tested platforms:** BMW MS42 0110C6, BMW MS43 430069, Holden VY V6 $060A Enhanced
+**Historical fixture families:** BMW MS42 0110C6, BMW MS43 430069, Holden VY V6 $060A Enhanced.
+These names are not blanket compatibility claims. Current portable tests use
+synthetic fixtures and the pinned exporter 3.7.2. One-shot edits produce new
+exclusive outputs; temp sessions are disabled. Source/log/diff and target-specific
+native/hardware review remain mandatory before vehicle use.
 
 **Platform details:** See `GENERAL_INFO_FOR_MS42.MD`, `GENERAL_INFO_FOR_MS43.MD`, and `GENERAL_INFO_FOR_vy_V6_ENHANCED_L36.MD` for hardware specs, memory layouts, firmware versions, XDF/BIN file names, key maps, and flash tools for each platform.
 
@@ -104,7 +110,7 @@ exact changed bytes -> checksum/signature handling -> comparable re-log.
 These are separate operations:
 
 - **Calibration edit:** `XDFTABLE`/`XDFCONSTANT` data is decoded through the
-  XDF equation and changed with `edit`, `edit-scalar`, or `batch`.
+  XDF equation and changed with `edit --autosave` or `edit-scalar --autosave`.
 - **XDF patch:** `XDFPATCH`/`XDFPATCHENTRY` can describe expected base bytes
   and replacement bytes. The current parser reports patch status, but this
   CLI does not yet expose a proved patch-application command.
@@ -113,8 +119,9 @@ These are separate operations:
   and execution context are proved. This is the appropriate model for VY ASM
   work and MS43X features that change code rather than calibration data.
 
-Never use `port` for code patches. A future guarded patch command should
-require a manifest like this and refuse the operation on any mismatch:
+Never use `port` for code patches. The guarded raw-patch v2 commands now exist;
+see README for the actual JSON schema and portable tests. The following older
+YAML is a design sketch, not an accepted manifest:
 
 ```yaml
 patch_id: "human-readable name and revision"

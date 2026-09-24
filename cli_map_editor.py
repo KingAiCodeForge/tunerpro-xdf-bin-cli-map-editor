@@ -5,21 +5,23 @@
 ===============================================================================
 
  Strict CLI tool for editing ECU calibration data using XDF definitions.
- Reuses the battle-tested UniversalXDFExporter for all XDF/BIN parsing.
- Adds write-back, porting, and TunerPro-identical logging.
+ Reuses UniversalXDFExporter for XDF/BIN parsing.
+ Adds guarded individual edits and project-owned audit logs.
 
  Commands:
    list-maps    List all maps/tables/scalars/flags in an XDF
    show-map     Show a table's real values from the BIN
    show-scalar  Show a scalar's value
+   show-flag    Show a bit flag's state and containing byte
    edit         Edit table cells (single or row/col ranges)
    edit-scalar  Edit a scalar value
-   batch        Apply edits from a CSV file
-   save         Persist temp edits to a named output BIN
+   edit-flag    Set or clear one bit flag without changing sibling bits
+   batch        Disabled pending transactional validation
+   save         Disabled: unbound temp files cannot be persisted
    export       Snapshot XDF+BIN to an output directory
-   port         Port maps from source XDF+BIN to destination XDF+BIN
+   port         Disabled pending verified transformations and transactional writes
    preflight    Validate XDF+BIN compatibility before editing
-   diff         Show byte-level diff between two BIN files
+   diff         Show byte-level diff, optionally attributed through a TunerPro XDF
    apply-raw-patch   Apply an exact-hash, reversible raw-byte patch manifest
    verify-raw-patch  Verify and stage a raw-byte patch entirely in memory
 
@@ -32,12 +34,16 @@
 
 import argparse
 import csv
+import json
+import io
+import math
 import os
 import re
 import struct
 import sys
 from datetime import datetime
 from pathlib import Path
+from contextlib import ExitStack, nullcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 # Fix Windows console encoding (safe approach for Python 3.13+)
@@ -50,8 +56,11 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
-# Import the proven exporter engine
+# Import the shared exporter engine
 from tunerpro_exporter_for_cli_editor_version import UniversalXDFExporter
+from tunerpro_xdf.xdf_addressing import table_layout
+from tunerpro_xdf.xdf_equations import EquationError, inverse_affine
+from tunerpro_xdf.xdf_values import read_integer, write_integer
 from raw_patch_checksum_profiles import TRUSTED_CHECKSUM_VERIFIERS
 from raw_patch_manifest import (
     PatchManifestError,
@@ -59,7 +68,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -68,14 +77,14 @@ __author__ = "Jason King"
 # Output naming:  <original_name>_<operation>_<YYYYMMDD_HHMMSS>.bin
 # Log naming:     <original_name>_<operation>_<YYYYMMDD_HHMMSS>.log
 # Operations:     edited, ported, batch
-# Temp files:     <original_name>.edited.tmp  (deleted after save)
+# Legacy unbound temp-file persistence is disabled.
 
 def _timestamp() -> str:
     """Generate timestamp string: YYYYMMDD_HHMMSS"""
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def _log_timestamp() -> str:
-    """Generate TunerPro-identical log-line timestamp: MM/DD/YYYY HH:MM:SS"""
+    """Generate the project log timestamp as MM/DD/YYYY HH:MM:SS."""
     return datetime.now().strftime("%m/%d/%Y %H:%M:%S")
 
 def _output_name(bin_path: str, operation: str, ts: str) -> str:
@@ -100,7 +109,7 @@ def _format_raw_hex(raw: int, size_bits: int) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# EXPORTER WRAPPER — loads XDF + BIN via the proven engine
+# EXPORTER WRAPPER — loads XDF + BIN via the shared engine
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class XDFBinSession:
@@ -152,27 +161,24 @@ class XDFBinSession:
 
     def find_table(self, name: str) -> Optional[Dict]:
         """Find a table by exact or case-insensitive title match."""
-        # Exact match first
-        for t in self.tables:
-            if t['title'] == name:
-                return t
-        # Case-insensitive fallback
-        name_lower = name.lower()
-        for t in self.tables:
-            if t['title'].lower() == name_lower:
-                return t
-        return None
+        return self._find_named(self.tables, name, 'table')
 
     def find_constant(self, name: str) -> Optional[Dict]:
         """Find a scalar/constant by title."""
-        for c in self.constants:
-            if c['title'] == name:
-                return c
-        name_lower = name.lower()
-        for c in self.constants:
-            if c['title'].lower() == name_lower:
-                return c
-        return None
+        return self._find_named(self.constants, name, 'scalar')
+
+    def find_flag(self, name: str) -> Optional[Dict]:
+        """Find a bit flag by exact or case-insensitive title match."""
+        return self._find_named(self.flags, name, 'flag')
+
+    @staticmethod
+    def _find_named(items, name, kind):
+        matches = [item for item in items if item['title'] == name]
+        if not matches:
+            matches = [item for item in items if item['title'].casefold() == name.casefold()]
+        if len(matches) > 1:
+            raise ValueError(f'Ambiguous {kind} title {name!r}: {len(matches)} matching objects')
+        return matches[0] if matches else None
 
     # ─── READ helpers ────────────────────────────────────────────────────
 
@@ -181,31 +187,39 @@ class XDFBinSession:
         # Temporarily point exporter to our mutable bin_data
         original = self.exporter.bin_data
         self.exporter.bin_data = bytes(self.bin_data)
-        result = self.exporter._read_table_data(table)
-        self.exporter.bin_data = original
-        return result
+        try:
+            return self.exporter._read_table_data(table)
+        finally:
+            self.exporter.bin_data = original
 
     def read_scalar_value(self, const: Dict) -> Tuple[Optional[int], Optional[float]]:
         """Read a scalar's raw and real value."""
         original = self.exporter.bin_data
         self.exporter.bin_data = bytes(self.bin_data)
-        raw = self.exporter.read_value_from_bin(
-            const['address'], const['size'],
-            signed=const.get('signed', False),
-            lsb_first=const.get('lsb_first', False)
-        )
-        self.exporter.bin_data = original
-        if raw is None:
-            return None, None
-        real = float(raw)
-        if const.get('equation'):
-            calc, _ = self.exporter.evaluate_math(
-                const['equation'], raw,
-                linked_vars=const.get('linked_vars', {})
-            )
-            if calc is not None:
-                real = calc
-        return raw, real
+        try:
+            return self.exporter.read_constant(const)
+        finally:
+            self.exporter.bin_data = original
+
+    def read_flag_state(self, flag: Dict) -> Tuple[int, bool]:
+        """Read the containing byte and selected flag state."""
+        address = flag['address']
+        mask = flag.get('mask', 0x01)
+        if not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
+            raise ValueError(f"Flag '{flag['title']}' has invalid mask {mask!r}")
+        file_offset = self.exporter._xdf_addr_to_file_offset(address)
+        raw = self._read_raw_at(file_offset, 8)
+        return raw, bool(raw & mask)
+
+    def _current_variables(self, item, table=None, row=0, col=0):
+        original = self.exporter.bin_data
+        self.exporter.bin_data = bytes(self.bin_data)
+        try:
+            linked = self.exporter.linked_vars_for(item)
+            context = self.exporter.table_context(table, row, col) if table else None
+            return self.exporter.math_variables(context, linked)
+        finally:
+            self.exporter.bin_data = original
 
     def get_table_dimensions(self, table: Dict) -> Tuple[int, int]:
         """Get (rows, cols) for a table."""
@@ -223,104 +237,57 @@ class XDFBinSession:
 
     def _write_raw_at(self, file_offset: int, size_bits: int, value: int,
                       signed: bool = False, lsb_first: bool = False):
-        """Write a raw integer value at a file offset."""
-        size_bytes = size_bits // 8
-        if file_offset < 0 or file_offset + size_bytes > len(self.bin_data):
-            raise IndexError(
-                f"Write at offset 0x{file_offset:X} size {size_bytes} "
-                f"out of range (bin len {len(self.bin_data)})"
-            )
-        endian = '<' if lsb_first else '>'
-        if size_bits == 8:
-            fmt = 'b' if signed else 'B'
-        elif size_bits == 16:
-            fmt = 'h' if signed else 'H'
-        elif size_bits == 32:
-            fmt = 'i' if signed else 'I'
-        else:
-            raise ValueError(f"Unsupported write size: {size_bits} bits")
-        packed = struct.pack(f'{endian}{fmt}', value)
-        self.bin_data[file_offset:file_offset + size_bytes] = packed
+        """Write one bounded integer using the shared BIN implementation."""
+        write_integer(self.bin_data, file_offset, size_bits, value, signed, lsb_first)
 
     def _read_raw_at(self, file_offset: int, size_bits: int,
                      signed: bool = False, lsb_first: bool = False) -> int:
-        """Read a raw integer value at a file offset."""
-        size_bytes = size_bits // 8
-        if file_offset < 0 or file_offset + size_bytes > len(self.bin_data):
-            raise IndexError(
-                f"Read at offset 0x{file_offset:X} size {size_bytes} "
-                f"out of range (bin len {len(self.bin_data)})"
-            )
-        chunk = bytes(self.bin_data[file_offset:file_offset + size_bytes])
-        endian = '<' if lsb_first else '>'
-        if size_bits == 8:
-            fmt = 'b' if signed else 'B'
-        elif size_bits == 16:
-            fmt = 'h' if signed else 'H'
-        elif size_bits == 32:
-            fmt = 'i' if signed else 'I'
-        else:
-            raise ValueError(f"Unsupported read size: {size_bits} bits")
-        return struct.unpack(f'{endian}{fmt}', chunk)[0]
+        """Read one bounded integer using the shared BIN implementation."""
+        return read_integer(self.bin_data, file_offset, size_bits, signed, lsb_first)
 
     def _inverse_math(self, equation: str, real_value: float,
                       linked_vars: Optional[Dict[str, float]] = None) -> Optional[int]:
-        """
-        Inverse math: given a real_value, compute the raw integer.
-        
-        Strategy:
-        1. Try to detect affine: real = a*X + b → X = (real - b) / a
-        2. If affine detection fails, use numerical search
-        
-        Returns raw integer or None on failure.
-        """
-        if not equation or equation.strip().upper() == 'X' or equation.lower() in ('(null)', 'null'):
-            return int(round(real_value))
-
-        # Clean equation for analysis
-        eq_clean = re.sub(r'&#\d+;', '', equation).strip()
-
-        # Try affine detection by evaluating at two points
-        raw_0 = 0
-        raw_1000 = 1000
-        val_0, _ = self.exporter.evaluate_math(eq_clean, raw_0, linked_vars=linked_vars or {})
-        val_1000, _ = self.exporter.evaluate_math(eq_clean, raw_1000, linked_vars=linked_vars or {})
-
-        if val_0 is not None and val_1000 is not None and val_1000 != val_0:
-            # Affine: real = a*raw + b
-            # a = (val_1000 - val_0) / 1000, b = val_0
-            a = (val_1000 - val_0) / 1000.0
-            b = val_0
-            if a != 0:
-                raw_f = (real_value - b) / a
-                raw_i = int(round(raw_f))
-                # Verify round-trip
-                verify, _ = self.exporter.evaluate_math(eq_clean, raw_i, linked_vars=linked_vars or {})
-                if verify is not None and abs(verify - real_value) < abs(a) * 0.6:
-                    return raw_i
-
-        # Numerical binary search for monotonic equations
-        # Use actual raw bounds for the element's bit size
-        best_raw = None
-        best_err = float('inf')
-        lo, hi = 0, 65535  # default for 16-bit unsigned
-        for raw_test in range(lo, hi + 1):
-            test_val, _ = self.exporter.evaluate_math(eq_clean, raw_test, linked_vars=linked_vars or {})
-            if test_val is not None:
-                err = abs(test_val - real_value)
-                if err < best_err:
-                    best_err = err
-                    best_raw = raw_test
-                if err < 0.001:
-                    break
-
-        return best_raw
+        """Invert only equations proved affine by their parsed structure."""
+        if any(name.lower() == 'x' for name in (linked_vars or {})):
+            return None
+        linked_names = {name.upper() for name in (linked_vars or {})}
+        equation = re.sub(r'\bX\d+\b',
+            lambda match: match.group() if match.group().upper() in linked_names else 'X',
+            equation or '', flags=re.IGNORECASE)
+        try:
+            return inverse_affine(equation or "", real_value, linked_vars or {})
+        except EquationError:
+            return None
 
     def _raw_bounds(self, size_bits: int, signed: bool) -> Tuple[int, int]:
         """Get (min_raw, max_raw) for a given bit size and signedness."""
         if signed:
             return -(1 << (size_bits - 1)), (1 << (size_bits - 1)) - 1
         return 0, (1 << size_bits) - 1
+
+    def _check_inverse_resolution(self, equation, raw, value, variables, bounds):
+        """A symbolic affine expression can still collapse in floating arithmetic."""
+        for neighbour in (raw - 1, raw + 1):
+            if bounds[0] <= neighbour <= bounds[1]:
+                adjacent, _ = self.exporter.evaluate_math(equation, neighbour, linked_vars=variables)
+                if adjacent == value:
+                    raise ValueError("Equation cannot distinguish adjacent raw values; supply an explicit raw value")
+
+    def _staged_real(self, item, offset, size, raw, signed, lsb, predicted,
+                     raw_mode, table=None, row=0, col=0):
+        staged = bytearray(self.bin_data)
+        write_integer(staged, offset, size, raw, signed, lsb)
+        original = self.exporter.bin_data
+        self.exporter.bin_data = staged
+        try:
+            context = self.exporter.table_context(table, row, col) if table else None
+            actual, _ = self.exporter.evaluate_math(item.get('equation', ''), raw,
+                context, linked_vars=self.exporter.linked_vars_for(item))
+            if not raw_mode and actual != predicted:
+                raise ValueError("Edit changes a conversion dependency; engineering write refused")
+            return actual
+        finally:
+            self.exporter.bin_data = original
 
     def write_table_cell(self, table: Dict, row: int, col: int, real_value: float,
                          raw_mode: bool = False) -> Dict[str, Any]:
@@ -330,6 +297,12 @@ class XDFBinSession:
         Returns change record: {map, row, col, address, old_raw, new_raw, old_real, new_real}
         """
         z = table['axes'].get('z', {})
+        xml = z.get('xml_element')
+        if xml is not None and any(
+            m.get('row') is not None or m.get('col') is not None
+            for m in xml.findall('MATH')
+        ):
+            raise ValueError('Scoped table equations are read-only; audited scoped writes are not supported')
         rows, cols = self.get_table_dimensions(table)
         
         if not (1 <= row <= rows):
@@ -342,17 +315,18 @@ class XDFBinSession:
             raise ValueError(f"Table '{table['title']}' has no Z-axis address")
 
         size_bits = z.get('size_bits', 8)
-        size_bytes = size_bits // 8
+        if z.get('type_flags', 0) & ~0x03:
+            raise ValueError("This XDF storage type requires native TunerPro write parity")
         signed = z.get('signed', False)
         lsb_first = z.get('lsb_first', False)
         equation = z.get('equation', '')
-        z_linked_vars = z.get('linked_vars', {})
+        z_linked_vars = self._current_variables(z, table, row - 1, col - 1)
 
-        # Calculate cell address (row-major, 0-based internal)
-        r0 = row - 1
-        c0 = col - 1
-        offset = (r0 * cols + c0) * size_bytes
-        xdf_addr = base_addr + offset
+        if not math.isfinite(real_value):
+            raise ValueError("Edit value must be finite")
+        layout = table_layout(table)
+        layout.validate_write()
+        xdf_addr = layout.cell_address(row - 1, col - 1)
         file_offset = self.exporter._xdf_addr_to_file_offset(xdf_addr)
 
         # Read old value
@@ -382,9 +356,6 @@ class XDFBinSession:
                 f"for {size_bits}-bit {'signed' if signed else 'unsigned'}"
             )
 
-        # Write
-        self._write_raw_at(file_offset, size_bits, new_raw, signed, lsb_first)
-
         # Compute written real for log accuracy
         new_real = float(new_raw)
         if equation:
@@ -392,6 +363,11 @@ class XDFBinSession:
             if calc is not None:
                 new_real = calc
 
+        if not raw_mode:
+            self._check_inverse_resolution(equation, new_raw, new_real, z_linked_vars, (min_raw, max_raw))
+        new_real = self._staged_real(z, file_offset, size_bits, new_raw, signed,
+            lsb_first, new_real, raw_mode, table, row - 1, col - 1)
+        self._write_raw_at(file_offset, size_bits, new_raw, signed, lsb_first)
         change = {
             'map': table['title'],
             'type': 'table',
@@ -418,11 +394,15 @@ class XDFBinSession:
         """
         address = const['address']
         size_bits = const['size']
+        if const.get('type_flags', 0) & ~0x03:
+            raise ValueError("This XDF storage type requires native TunerPro write parity")
         signed = const.get('signed', False)
         lsb_first = const.get('lsb_first', False)
         equation = const.get('equation', '')
-        linked_vars = const.get('linked_vars', {})
+        linked_vars = self._current_variables(const)
 
+        if not math.isfinite(real_value):
+            raise ValueError("Edit value must be finite")
         file_offset = self.exporter._xdf_addr_to_file_offset(address)
 
         # Read old
@@ -451,9 +431,6 @@ class XDFBinSession:
                 f"Raw value {new_raw} out of range ({min_raw}..{max_raw})"
             )
 
-        # Write
-        self._write_raw_at(file_offset, size_bits, new_raw, signed, lsb_first)
-
         # Compute written real
         new_real = float(new_raw)
         if equation:
@@ -461,6 +438,10 @@ class XDFBinSession:
             if calc is not None:
                 new_real = calc
 
+        if not raw_mode:
+            self._check_inverse_resolution(equation, new_raw, new_real, linked_vars, (min_raw, max_raw))
+        new_real = self._staged_real(const, file_offset, size_bits, new_raw, signed,
+            lsb_first, new_real, raw_mode)
         unit = const.get('unit', '')
         hex_old = _format_raw_hex(old_raw, size_bits)
         hex_new = _format_raw_hex(new_raw, size_bits)
@@ -481,8 +462,6 @@ class XDFBinSession:
                 f"from {old_real:.{dp}f} ({hex_old}) "
                 f"to {new_real:.{dp}f} ({hex_new})."
             )
-        self.log_entries.append(entry)
-
         change = {
             'map': const['title'],
             'type': 'scalar',
@@ -497,17 +476,53 @@ class XDFBinSession:
             'size_bits': size_bits,
             'unit': unit,
         }
+        # Construct the audit entry before touching bytes: invalid formatting
+        # metadata must not leave an unrecorded edit in the session.
+        self._write_raw_at(file_offset, size_bits, new_raw, signed, lsb_first)
+        self.log_entries.append(entry)
+        self.changes.append(change)
+        return change
+
+    def write_flag(self, flag: Dict, state: bool) -> Dict[str, Any]:
+        """Set or clear one XDF flag while preserving every sibling bit."""
+        address = flag['address']
+        mask = flag.get('mask', 0x01)
+        if not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
+            raise ValueError(f"Flag '{flag['title']}' has invalid mask {mask!r}")
+
+        file_offset = self.exporter._xdf_addr_to_file_offset(address)
+        old_raw = self._read_raw_at(file_offset, 8)
+        old_state = bool(old_raw & mask)
+        new_raw = (old_raw | mask) if state else (old_raw & (~mask & 0xFF))
+        self._write_raw_at(file_offset, 8, new_raw)
+
+        self.add_flag_log_entry(
+            flag['title'],
+            "Set" if old_state else "Not Set",
+            "Set" if state else "Not Set",
+        )
+        change = {
+            'map': flag['title'],
+            'type': 'flag',
+            'row': '',
+            'col': '',
+            'address': f"0x{address:04X}",
+            'file_offset': f"0x{file_offset:04X}",
+            'old_raw': old_raw,
+            'new_raw': new_raw,
+            'old_real': int(old_state),
+            'new_real': int(state),
+            'size_bits': 8,
+            'unit': f"mask=0x{mask:02X}",
+        }
         self.changes.append(change)
         return change
 
     # ─── TEMP FILE / SAVE ────────────────────────────────────────────────
 
     def save_temp(self):
-        """Save current edits to a .edited.tmp file."""
-        tmp_path = self.bin_path + ".edited.tmp"
-        with open(tmp_path, 'wb') as f:
-            f.write(bytes(self.bin_data))
-        return tmp_path
+        """Unbound temp BIN files cannot safely preserve edit provenance."""
+        raise ValueError('Temporary saves are disabled; use --autosave --output-dir for a new BIN and audit logs')
 
     def save_final(self, output_dir: str,
                    operation: str = "edited") -> Tuple[str, str]:
@@ -515,7 +530,7 @@ class XDFBinSession:
         Save to final named file with timestamp + matching log.
 
         Writes BOTH:
-        - TunerPro-format .log (human-readable, identical to TunerPro)
+        - Project-owned .log (human-readable; not a native TunerPro log)
         - Detailed .csv (cell-level data for auditing/automation)
 
         Returns (bin_path, log_path).
@@ -525,21 +540,33 @@ class XDFBinSession:
         log_name = _log_name(self.bin_path, operation, ts)
         detail_name = log_name.replace('.log', '_detailed.csv')
 
-        os.makedirs(output_dir, exist_ok=True)
         bin_out = os.path.join(output_dir, bin_name)
         log_out = os.path.join(output_dir, log_name)
         detail_out = os.path.join(output_dir, detail_name)
+        output_paths = [Path(path) for path in (bin_out, log_out, detail_out)]
+        protected = {Path(self.bin_path).resolve(), Path(self.xdf_path).resolve()}
+        resolved = [path.resolve() for path in output_paths]
+        if len(set(resolved)) != len(resolved) or any(path in protected for path in resolved):
+            raise ValueError('Output paths must be distinct from each other and the input files')
+        for path in output_paths:
+            if os.path.lexists(path):
+                raise FileExistsError(f'Refusing to overwrite existing output: {path}')
 
-        # Write BIN
-        with open(bin_out, 'wb') as f:
-            f.write(bytes(self.bin_data))
-
-        # Write TunerPro-format LOG
-        self._write_log(log_out)
-
-        # Write detailed CSV LOG
-        self._write_detailed_log(detail_out)
-
+        # Render the audit files before creating anything, so malformed log
+        # metadata cannot leave a BIN without its corresponding audit content.
+        log_buffer, detail_buffer = io.StringIO(), io.StringIO(newline='')
+        self._write_log(log_out, log_buffer)
+        self._write_detailed_log(detail_out, detail_buffer)
+        payloads = [bytes(self.bin_data), log_buffer.getvalue().encode('utf-8'),
+                    detail_buffer.getvalue().encode('utf-8')]
+        os.makedirs(output_dir, exist_ok=True)
+        # Exclusive creation also protects against collisions after preflight.
+        # Reserve all paths before writing bytes; preserve reservations on an
+        # I/O error rather than deleting any files. The caller reports failure.
+        with ExitStack() as stack:
+            handles = [stack.enter_context(open(path, 'xb')) for path in output_paths]
+            for index in (1, 2, 0):
+                handles[index].write(payloads[index])
         return bin_out, log_out
 
     def add_table_log_entry(self, table_title: str):
@@ -566,15 +593,16 @@ class XDFBinSession:
                  f"[{prefix}] {patch_title} changed.")
         self.log_entries.append(entry)
 
-    def _write_log(self, log_path: str):
+    def _write_log(self, log_path: str, stream=None):
         """
-        Write change log in TunerPro-identical format.
+        Write the KingAI project change log.
 
         Verified against 54 real TunerPro .log files across:
           BMW MS40, MS42, MS43 | Holden VS, VT, VY | OSE V8
 
-        TunerPro header (2 lines):
-          Edit Log for <filename> created by TunerPro.
+        Project header (3 lines):
+          KingAI CLI Map Editor audit log for <filename>.
+          Generated by cli_map_editor.py; this is not a native TunerPro log.
           **************************************************************************
 
         Type column alignment (TunerPro pads type label to col 10):
@@ -594,10 +622,10 @@ class XDFBinSession:
         Flag entries end with double period:  Set..  Not Set..
         """
         bin_filename = os.path.basename(self.bin_path)
-        with open(log_path, 'w', encoding='utf-8') as f:
-            # TunerPro-identical header (74 asterisks)
-            f.write(f"Edit Log for {bin_filename} "
-                    f"created by TunerPro.\n")
+        with (open(log_path, 'x', encoding='utf-8') if stream is None else nullcontext(stream)) as f:
+            f.write(f"KingAI CLI Map Editor audit log for {bin_filename}.\n")
+            f.write("Generated by cli_map_editor.py; "
+                    "this is not a native TunerPro log.\n")
             f.write("*" * 74 + "\n")
             # Write all log entries in chronological order
             for entry in self.log_entries:
@@ -619,7 +647,7 @@ class XDFBinSession:
                             f"old={c['old_real']} "
                             f"new={c['new_real']}\n"
                         )
-                    elif c['type'] == 'scalar':
+                    elif c['type'] in ('scalar', 'flag'):
                         f.write(
                             f"  {c['map']} "
                             f"addr={c['address']} "
@@ -631,7 +659,7 @@ class XDFBinSession:
                             f"{c.get('unit', '')}\n"
                         )
 
-    def _write_detailed_log(self, log_path: str):
+    def _write_detailed_log(self, log_path: str, stream=None):
         """
         Write detailed cell-level change log (CSV format).
         Extended format with per-cell data for auditing.
@@ -642,7 +670,7 @@ class XDFBinSession:
           SIZE_BITS — 8/16/32
           EQUATION — forward equation from XDF
         """
-        with open(log_path, 'w', newline='', encoding='utf-8') as f:
+        with (open(log_path, 'x', newline='', encoding='utf-8') if stream is None else nullcontext(stream)) as f:
             writer = csv.writer(f)
             writer.writerow([
                 'TIMESTAMP', 'MAP_NAME', 'TYPE',
@@ -826,8 +854,11 @@ def cmd_list_maps(args):
     print(f"{'='*70}")
     for c in session.constants:
         addr = f"0x{c['address']:04X}" if c['address'] is not None else "N/A"
-        raw, real = session.read_scalar_value(c)
-        val_str = f"{real}" if real is not None else "ERROR"
+        try:
+            raw, real = session.read_scalar_value(c)
+            val_str = f"{real}" if real is not None else "ERROR"
+        except (EquationError, ValueError, TypeError, KeyError) as exc:
+            val_str = f"ERROR ({exc})"
         unit = c.get('unit', '')
         print(f"  {c['title']}: {val_str} {unit}  [addr={addr}]")
 
@@ -837,7 +868,12 @@ def cmd_list_maps(args):
         print(f"FLAGS ({len(session.flags)})")
         print(f"{'='*70}")
         for f in session.flags:
-            print(f"  {f['title']}  [addr=0x{f['address']:04X}]")
+            raw, is_set = session.read_flag_state(f)
+            print(
+                f"  {f['title']}: {'Set' if is_set else 'Not Set'}  "
+                f"[addr=0x{f['address']:04X}, mask=0x{f['mask']:02X}, "
+                f"byte=0x{raw:02X}]"
+            )
 
     # Patches
     if session.patches:
@@ -853,6 +889,18 @@ def cmd_list_maps(args):
 
     print()
     return 0
+
+
+def _label_is_nonnumeric(value: Any) -> bool:
+    """Return True when an XDF LABEL is text rather than a numeric literal."""
+
+    if value is None or str(value).strip() == "":
+        return False
+    try:
+        float(str(value).strip())
+    except ValueError:
+        return True
+    return False
 
 
 def cmd_show_map(args):
@@ -886,12 +934,38 @@ def cmd_show_map(args):
     # Show axes
     x_labels = x.get('labels', [])
     y_labels = y.get('labels', [])
+    x_display_labels = x.get('display_labels', [])
+    y_display_labels = y.get('display_labels', [])
+    x_has_text_labels = any(
+        _label_is_nonnumeric(value) for value in x_display_labels
+    )
+    y_has_text_labels = any(
+        _label_is_nonnumeric(value) for value in y_display_labels
+    )
     if x_labels:
         x_dp = x.get('decimalpl', 2)
-        print(f"  X-Axis ({x.get('unit', '')}): [{', '.join(f'{v:.{x_dp}f}' for v in x_labels)}]")
+        qualifier = " numeric rendering" if x_has_text_labels else ""
+        print(
+            f"  X-Axis{qualifier} ({x.get('unit', '')}): "
+            f"[{', '.join(f'{v:.{x_dp}f}' for v in x_labels)}]"
+        )
+    if x_has_text_labels:
+        print(
+            "  X-Axis raw XDF labels: "
+            + json.dumps(x_display_labels, ensure_ascii=False)
+        )
     if y_labels:
         y_dp = y.get('decimalpl', 2)
-        print(f"  Y-Axis ({y.get('unit', '')}): [{', '.join(f'{v:.{y_dp}f}' for v in y_labels)}]")
+        qualifier = " numeric rendering" if y_has_text_labels else ""
+        print(
+            f"  Y-Axis{qualifier} ({y.get('unit', '')}): "
+            f"[{', '.join(f'{v:.{y_dp}f}' for v in y_labels)}]"
+        )
+    if y_has_text_labels:
+        print(
+            "  Y-Axis raw XDF labels: "
+            + json.dumps(y_display_labels, ensure_ascii=False)
+        )
 
     # Read data
     data = session.read_table_data(table)
@@ -912,7 +986,7 @@ def cmd_show_map(args):
 
     for r, row in enumerate(data):
         y_lbl = ""
-        if y_labels and r < len(y_labels):
+        if y_labels and r < len(y_labels) and not y_has_text_labels:
             y_dp = y.get('decimalpl', 2)
             y_lbl = f"{y_labels[r]:>8.{y_dp}f} "
         else:
@@ -947,8 +1021,41 @@ def cmd_show_scalar(args):
     return 0
 
 
+def cmd_show_flag(args):
+    """Show one flag's state and its containing byte."""
+    session = XDFBinSession(args.xdf, args.bin)
+    if not session.load():
+        print("ERROR: Failed to load XDF+BIN")
+        return 1
+
+    flag = session.find_flag(args.name)
+    if flag is None:
+        print(f"ERROR: Flag '{args.name}' not found")
+        return 1
+
+    raw, is_set = session.read_flag_state(flag)
+    mask = flag.get('mask', 0x01)
+    print(f"\nFLAG: {flag['title']}")
+    print(f"  State: {'Set' if is_set else 'Not Set'}")
+    print(f"  Address: 0x{flag['address']:04X}")
+    print(f"  Mask: 0x{mask:02X}")
+    print(f"  Containing byte: 0x{raw:02X}")
+    print()
+    return 0
+
+
+def _require_autosave(args):
+    if not getattr(args, 'autosave', False) or not getattr(args, 'output_dir', None):
+        print('ERROR: Edits require --autosave --output-dir <directory> to create a new BIN and audit logs.')
+        print('Use the saved BIN as --bin for a subsequent edit; temporary sessions are disabled.')
+        return False
+    return True
+
+
 def cmd_edit(args):
     """Edit table cells — single or range."""
+    if not _require_autosave(args):
+        return 1
     session = XDFBinSession(args.xdf, args.bin)
     if not session.load():
         print("ERROR: Failed to load XDF+BIN")
@@ -980,22 +1087,17 @@ def cmd_edit(args):
     # TunerPro-format: one log entry per table edit command
     session.add_table_log_entry(table['title'])
 
-    # Save temp
-    tmp = session.save_temp()
-    print(f"\nEdited {count} cells. Temp file: {tmp}")
-
-    # If --save flag, save final immediately
-    if getattr(args, 'save', False):
-        output_dir = args.output_dir or os.path.join(os.path.dirname(args.bin), "output")
-        bin_out, log_out = session.save_final(output_dir, "edited")
-        print(f"Saved: {bin_out}")
-        print(f"Log:   {log_out}")
+    bin_out, log_out = session.save_final(args.output_dir, 'edited')
+    print(f"\nEdited {count} cells. Saved: {bin_out}")
+    print(f"Log:   {log_out}")
 
     return 0
 
 
 def cmd_edit_scalar(args):
     """Edit a scalar value."""
+    if not _require_autosave(args):
+        return 1
     session = XDFBinSession(args.xdf, args.bin)
     if not session.load():
         print("ERROR: Failed to load XDF+BIN")
@@ -1012,252 +1114,73 @@ def cmd_edit_scalar(args):
           f"old_raw={change['old_raw']} new_raw={change['new_raw']} "
           f"old_real={change['old_real']} new_real={change['new_real']}")
 
-    tmp = session.save_temp()
-    print(f"Temp file: {tmp}")
-
-    if getattr(args, 'save', False):
-        output_dir = args.output_dir or os.path.join(os.path.dirname(args.bin), "output")
-        bin_out, log_out = session.save_final(output_dir, "edited")
-        print(f"Saved: {bin_out}")
-        print(f"Log:   {log_out}")
+    bin_out, log_out = session.save_final(args.output_dir, 'edited')
+    print(f"Saved: {bin_out}")
+    print(f"Log:   {log_out}")
 
     return 0
 
 
-def cmd_batch(args):
-    """Apply batch edits from CSV. Columns: map,row,col,value"""
+def _parse_flag_state(value: Any) -> bool:
+    """Parse explicit CLI/CSV flag states without Python truthiness traps."""
+    normalized = str(value).strip().lower()
+    if normalized in {'1', 'set', 'on', 'true', 'yes', 'enabled', 'enable'}:
+        return True
+    if normalized in {'0', 'clear', 'off', 'false', 'no', 'disabled', 'disable'}:
+        return False
+    raise ValueError(
+        f"Invalid flag state {value!r}; use set/clear, on/off, true/false, or 1/0"
+    )
+
+
+def cmd_edit_flag(args):
+    """Set or clear one bit flag."""
+    if not _require_autosave(args):
+        return 1
     session = XDFBinSession(args.xdf, args.bin)
     if not session.load():
         print("ERROR: Failed to load XDF+BIN")
         return 1
 
-    count = 0
-    _batch_tables_modified = set()
-    with open(args.csv, newline='', encoding='utf-8') as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            map_name = row.get('map', row.get('MAP_NAME', '')).strip()
-            if not map_name:
-                map_name = getattr(args, 'default_map', '')
-            if not map_name:
-                print(f"ERROR: Row missing 'map' column and no --default-map provided")
-                return 1
+    flag = session.find_flag(args.name)
+    if flag is None:
+        print(f"ERROR: Flag '{args.name}' not found")
+        return 1
 
-            r_str = row.get('row', row.get('ROW', '')).strip()
-            c_str = row.get('col', row.get('COLUMN',
-                            row.get('COL', ''))).strip()
-            v = float(row.get('value', row.get('VALUE', 0)))
+    state = _parse_flag_state(args.state)
+    change = session.write_flag(flag, state)
+    print(
+        f"  {change['map']} addr={change['address']} "
+        f"mask={change['unit']} old_byte=0x{change['old_raw']:02X} "
+        f"new_byte=0x{change['new_raw']:02X} "
+        f"state={'Set' if state else 'Not Set'}"
+    )
 
-            # If row/col are blank, treat as scalar edit
-            if not r_str or not c_str:
-                const = session.find_constant(map_name)
-                if const is not None:
-                    session.write_scalar(const, v)
-                    count += 1
-                    continue
-                print(f"WARNING: '{map_name}' not found "
-                      f"as scalar, skipping")
-                continue
-
-            r = int(r_str)
-            c = int(c_str)
-
-            table = session.find_table(map_name)
-            if table is None:
-                # Try scalar fallback (name might match)
-                const = session.find_constant(map_name)
-                if const is not None:
-                    session.write_scalar(const, v)
-                    count += 1
-                    continue
-                print(f"WARNING: '{map_name}' not found, skipping")
-                continue
-
-            session.write_table_cell(table, r, c, v)
-            # Track which tables were modified for log grouping
-            if map_name not in _batch_tables_modified:
-                _batch_tables_modified.add(map_name)
-            count += 1
-
-    # Add TunerPro-format table log entries (one per table)
-    for tname in _batch_tables_modified:
-        session.add_table_log_entry(tname)
-
-    print(f"Applied {count} edits from {args.csv}")
-
-    output_dir = args.output_dir or os.path.join(os.path.dirname(args.bin), "output")
-    bin_out, log_out = session.save_final(output_dir, "batch")
+    bin_out, log_out = session.save_final(args.output_dir, 'edited')
     print(f"Saved: {bin_out}")
     print(f"Log:   {log_out}")
     return 0
+
+
+def cmd_batch(args):
+    """Refuse batch writes until transactional validation is supported."""
+    print('ERROR: Batch writes are disabled until all-row validation and transactional saves are implemented.')
+    print('Use individual edit commands with --autosave --output-dir, then use the resulting BIN for the next edit.')
+    return 1
 
 
 def cmd_save(args):
-    """Save temp edits to final named file."""
-    tmp_path = args.bin + ".edited.tmp"
-    if not os.path.exists(tmp_path):
-        print(f"ERROR: No temp file found at {tmp_path}")
-        print("Run an edit command first.")
-        return 1
-
-    ts = _timestamp()
-    output_dir = args.output_dir or os.path.join(os.path.dirname(args.bin), "output")
-    os.makedirs(output_dir, exist_ok=True)
-
-    bin_name = _output_name(args.bin, "edited", ts)
-    bin_out = os.path.join(output_dir, bin_name)
-
-    with open(tmp_path, 'rb') as f:
-        data = f.read()
-    with open(bin_out, 'wb') as f:
-        f.write(data)
-
-    print(f"Saved: {bin_out}")
-    print("NOTE: Use 'edit --save' or 'batch' for auto-generated logs.")
-    print("      The 'save' command only persists the temp BIN file.")
-    return 0
+    """Refuse unbound temp-file persistence."""
+    print('ERROR: Standalone save is disabled because legacy temp files are not bound to their source BIN and XDF.')
+    print('Repeat the intended edit with --autosave --output-dir to create a new BIN and audit logs.')
+    return 1
 
 
 def cmd_port(args):
-    """Port maps from source XDF+BIN to destination XDF+BIN."""
-    src = XDFBinSession(args.src_xdf, args.src_bin)
-    dst = XDFBinSession(args.dst_xdf, args.dst_bin)
-
-    if not src.load():
-        print("ERROR: Failed to load source XDF+BIN")
-        return 1
-    if not dst.load():
-        print("ERROR: Failed to load destination XDF+BIN")
-        return 1
-
-    stoich = getattr(args, 'stoich', 14.7)
-    method = getattr(args, 'method', 'bilinear')
-
-    # Build mapping
-    mapping = {}
-    if args.map_csv:
-        # Load CSV mapping: src_name, dst_name
-        with open(args.map_csv, newline='', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) >= 2 and row[0].strip() and row[1].strip():
-                    mapping[row[0].strip()] = row[1].strip()
-    elif args.map_name:
-        mapping[args.map_name] = args.map_name
-    else:
-        # Auto-match by exact name
-        src_names = {t['title'] for t in src.tables}
-        dst_names = {t['title'] for t in dst.tables}
-        common = src_names & dst_names
-        for name in common:
-            mapping[name] = name
-        print(f"Auto-matched {len(mapping)} tables by name")
-
-    if not mapping:
-        print("ERROR: No map mappings found")
-        return 1
-
-    total_cells = 0
-    skipped = []
-    ported_maps = []
-
-    for src_name, dst_name in mapping.items():
-        src_table = src.find_table(src_name)
-        dst_table = dst.find_table(dst_name)
-        if src_table is None:
-            skipped.append(f"Source '{src_name}' not found")
-            continue
-        if dst_table is None:
-            skipped.append(f"Dest '{dst_name}' not found")
-            continue
-
-        # Read source data
-        src_data = src.read_table_data(src_table)
-        if src_data is None:
-            skipped.append(f"Cannot read source '{src_name}'")
-            continue
-
-        src_rows, src_cols = src.get_table_dimensions(src_table)
-        dst_rows, dst_cols = dst.get_table_dimensions(dst_table)
-
-        # Get axes
-        src_x_labels = src_table['axes'].get('x', {}).get('labels', [])
-        src_y_labels = src_table['axes'].get('y', {}).get('labels', [])
-        dst_x_labels = dst_table['axes'].get('x', {}).get('labels', [])
-        dst_y_labels = dst_table['axes'].get('y', {}).get('labels', [])
-
-        src_x = axis_or_index(src_x_labels, src_cols)
-        src_y = axis_or_index(src_y_labels, src_rows)
-        dst_x = axis_or_index(dst_x_labels, dst_cols)
-        dst_y = axis_or_index(dst_y_labels, dst_rows)
-
-        # Unit conversion (AFR <-> Lambda)
-        src_z_unit = src_table['axes'].get('z', {}).get('unit', '')
-        dst_z_unit = dst_table['axes'].get('z', {}).get('unit', '')
-        src_unit_type = detect_unit_type(src_name, src_z_unit)
-        dst_unit_type = detect_unit_type(dst_name, dst_z_unit)
-
-        # Convert source data if needed
-        converted_data = src_data
-        conversion_note = ""
-        if src_unit_type == 'afr' and dst_unit_type == 'lambda':
-            converted_data = [[afr_to_lambda(v, stoich) for v in row] for row in src_data]
-            conversion_note = f"AFR->Lambda (stoich={stoich})"
-        elif src_unit_type == 'lambda' and dst_unit_type == 'afr':
-            converted_data = [[lambda_to_afr(v, stoich) for v in row] for row in src_data]
-            conversion_note = f"Lambda->AFR (stoich={stoich})"
-        elif src_unit_type == 'mass' or dst_unit_type == 'mass':
-            skipped.append(f"'{src_name}' -> '{dst_name}': mass-unit conversion requires manual review")
-            continue
-
-        # Resample if dimensions differ
-        if src_rows == dst_rows and src_cols == dst_cols and not conversion_note:
-            # Direct copy — same dimensions, no unit conversion needed
-            resampled = converted_data
-        else:
-            # Bilinear resample
-            if len(converted_data) < 2 or len(converted_data[0]) < 2:
-                # Too small for bilinear — direct copy or nearest
-                resampled = converted_data
-            else:
-                resampled = bilinear_resample(
-                    converted_data, src_x, src_y, dst_x, dst_y
-                )
-
-        # Write to destination
-        cell_count = 0
-        for r in range(dst_rows):
-            for c in range(dst_cols):
-                real_val = resampled[r][c] if r < len(resampled) and c < len(resampled[0]) else 0.0
-                try:
-                    dst.write_table_cell(dst_table, r + 1, c + 1, real_val)
-                    cell_count += 1
-                except Exception as e:
-                    skipped.append(f"'{dst_name}'[{r+1},{c+1}]: {e}")
-
-        total_cells += cell_count
-        info = f"  Ported: {src_name} -> {dst_name} ({cell_count} cells)"
-        if conversion_note:
-            info += f" [{conversion_note}]"
-        ported_maps.append(info)
-        # TunerPro-format log entry for ported table
-        dst.add_table_log_entry(dst_name)
-        print(info)
-
-    # Save
-    output_dir = args.output_dir or os.path.join(os.path.dirname(args.dst_bin), "output")
-    bin_out, log_out = dst.save_final(output_dir, "ported")
-
-    print(f"\nPort complete: {total_cells} total cells across {len(ported_maps)} maps")
-    print(f"Saved: {bin_out}")
-    print(f"Log:   {log_out}")
-
-    if skipped:
-        print(f"\nSkipped/Warnings ({len(skipped)}):")
-        for s in skipped:
-            print(f"  WARNING: {s}")
-
-    return 0
+    """Refuse unverified automatic map transformations."""
+    print('ERROR: Map porting is disabled until axis/unit compatibility and transactional writes are verified.')
+    print('Use show-map and diff to review the inputs; apply only individually verified edits with --autosave.')
+    return 1
 
 
 def cmd_preflight(args):
@@ -1282,6 +1205,15 @@ def cmd_preflight(args):
     tables_bad = 0
     address_ranges = []
 
+    for const in session.constants:
+        try:
+            session.read_scalar_value(const)
+        except (ValueError, IndexError) as exc:
+            issues.append(f"Scalar '{const['title']}': {exc}")
+    for flag in session.flags:
+        if session.exporter.read_value_from_bin(flag['address'], 8) is None:
+            issues.append(f"Flag '{flag['title']}' cannot be read")
+
     for t in session.tables:
         rows, cols = session.get_table_dimensions(t)
         z = t['axes'].get('z', {})
@@ -1291,13 +1223,15 @@ def cmd_preflight(args):
             tables_bad += 1
             continue
 
-        size_bits = z.get('size_bits', 8)
-        size_bytes = size_bits // 8
-        span = rows * cols * size_bytes
-        file_start = session.exporter._xdf_addr_to_file_offset(addr)
-        file_end = file_start + span
+        try:
+            layout = table_layout(t)
+            file_start, file_end = layout.file_span(bo, bs)
+        except (ValueError, IndexError) as exc:
+            issues.append(f"Table '{t['title']}': {exc}")
+            tables_bad += 1
+            continue
 
-        if file_end > len(session.bin_data):
+        if file_start < 0 or file_end > len(session.bin_data):
             issues.append(
                 f"Table '{t['title']}' extends past BIN end "
                 f"(0x{file_start:X}..0x{file_end:X} > 0x{len(session.bin_data):X})"
@@ -1307,8 +1241,13 @@ def cmd_preflight(args):
 
         address_ranges.append((file_start, file_end, t['title']))
 
-        # Round-trip test on first cell
-        data = session.read_table_data(t)
+        # Read validation is separate from native TunerPro write parity.
+        try:
+            data = session.read_table_data(t)
+        except (ValueError, IndexError) as exc:
+            issues.append(f"Table '{t['title']}': {exc}")
+            tables_bad += 1
+            continue
         if data is not None and len(data) > 0 and len(data[0]) > 0:
             tables_ok += 1
         else:
@@ -1346,15 +1285,157 @@ def cmd_preflight(args):
         return 0
 
 
+def _xdf_owner_label(owner: Dict[str, Any]) -> str:
+    """Format one parsed TunerPro XDF owner for diff output."""
+    label = f"{owner['kind']}:{owner['title']}"
+    if owner.get('cell'):
+        row, col = owner['cell']
+        label += f" [row={row},col={col}]"
+    if owner.get('entry'):
+        label += f" [{owner['entry']}]"
+    return label
+
+
+def _attribute_xdf_differences(session: XDFBinSession, changed_offsets) -> Tuple[Dict[int, List[Dict]], List[str]]:
+    """Map changed file offsets to parsed TunerPro XDF items without guessing."""
+    wanted = set(changed_offsets)
+    owners: Dict[int, List[Dict[str, Any]]] = {}
+    warnings: List[str] = []
+
+    def add_owner(offset: int, owner: Dict[str, Any]):
+        if offset not in wanted:
+            return
+        existing = owners.setdefault(offset, [])
+        identity = (
+            owner.get('kind'), owner.get('title'), owner.get('uniqueid'),
+            owner.get('cell'), owner.get('entry'),
+        )
+        if not any((
+            item.get('kind'), item.get('title'), item.get('uniqueid'),
+            item.get('cell'), item.get('entry'),
+        ) == identity for item in existing):
+            existing.append(owner)
+
+    def translated(address: int) -> int:
+        return session.exporter._xdf_addr_to_file_offset(address)
+
+    for table in session.tables:
+        title = table.get('title') or '<untitled table>'
+        try:
+            layout = table_layout(table)
+            start, end = layout.file_span(
+                session.exporter.base_offset, session.exporter.base_subtract)
+            if not any(start <= offset < end for offset in wanted):
+                continue
+            for row in range(layout.rows):
+                for col in range(layout.cols):
+                    offset = translated(layout.cell_address(row, col))
+                    for byte_offset in range(offset, offset + layout.width):
+                        add_owner(byte_offset, {
+                            'kind': 'table',
+                            'title': title,
+                            'uniqueid': table.get('uniqueid'),
+                            'cell': (row + 1, col + 1),
+                        })
+        except (KeyError, TypeError, ValueError, IndexError) as exc:
+            warnings.append(f"table '{title}': {exc}")
+
+    for const in session.constants:
+        title = const.get('title') or '<untitled scalar>'
+        try:
+            size_bits = int(const.get('size', 8))
+            if size_bits <= 0 or size_bits % 8:
+                raise ValueError(f"unsupported element width {size_bits} bits")
+            offset = translated(int(const['address']))
+            for byte_offset in range(offset, offset + size_bits // 8):
+                add_owner(byte_offset, {
+                    'kind': 'scalar',
+                    'title': title,
+                    'uniqueid': const.get('uniqueid'),
+                })
+        except (KeyError, TypeError, ValueError) as exc:
+            warnings.append(f"scalar '{title}': {exc}")
+
+    for flag in session.flags:
+        title = flag.get('title') or '<untitled flag>'
+        try:
+            add_owner(translated(int(flag['address'])), {
+                'kind': 'flag',
+                'title': title,
+                'uniqueid': flag.get('uniqueid'),
+            })
+        except (KeyError, TypeError, ValueError) as exc:
+            warnings.append(f"flag '{title}': {exc}")
+
+    for patch in session.patches:
+        title = patch.get('title') or '<untitled patch>'
+        for entry in patch.get('entries', []):
+            entry_name = entry.get('name') or '<unnamed entry>'
+            try:
+                size_bytes = int(entry['datasize'])
+                if size_bytes <= 0:
+                    raise ValueError(f"invalid data size {size_bytes}")
+                offset = translated(int(entry['address']))
+                for byte_offset in range(offset, offset + size_bytes):
+                    add_owner(byte_offset, {
+                        'kind': 'patch',
+                        'title': title,
+                        'entry': entry_name,
+                    })
+            except (KeyError, TypeError, ValueError) as exc:
+                warnings.append(f"patch '{title}' entry '{entry_name}': {exc}")
+
+    return owners, warnings
+
+
+def _print_xdf_diff_summary(owners: Dict[int, List[Dict]], changed_offsets, warnings: List[str]):
+    """Print unique-byte attribution while retaining overlapping XDF owners."""
+    changed = set(changed_offsets)
+    mapped = {offset for offset in changed if owners.get(offset)}
+    grouped: Dict[Tuple[str, str, Optional[str]], Dict[str, Any]] = {}
+    for offset in sorted(mapped):
+        for owner in owners[offset]:
+            key = (owner['kind'], owner['title'], owner.get('uniqueid'))
+            item = grouped.setdefault(key, {'bytes': set(), 'cells': set(), 'entries': set()})
+            item['bytes'].add(offset)
+            if owner.get('cell'):
+                item['cells'].add(owner['cell'])
+            if owner.get('entry'):
+                item['entries'].add(owner['entry'])
+
+    print(f"\nTunerPro XDF attribution: {len(mapped)}/{len(changed)} changed bytes mapped")
+    print("  Counts can overlap when the XDF defines more than one item at an address.")
+    if grouped:
+        print(f"\n  {'TYPE':<8} {'BYTES':>7}  {'DETAIL':<16} ITEM")
+        for (kind, title, _uniqueid), item in sorted(grouped.items(), key=lambda pair: (pair[0][0], pair[0][1].lower())):
+            if item['cells']:
+                detail = f"{len(item['cells'])} cell(s)"
+            elif item['entries']:
+                detail = f"{len(item['entries'])} entry(s)"
+            else:
+                detail = ""
+            print(f"  {kind:<8} {len(item['bytes']):>7}  {detail:<16} {title}")
+    unmapped = len(changed - mapped)
+    if unmapped:
+        print(f"  {'UNMAPPED':<8} {unmapped:>7}  {'':<16} No parsed XDF item")
+    if warnings:
+        print(f"\n  XDF attribution warnings ({len(warnings)}):")
+        for warning in warnings[:20]:
+            print(f"    ! {warning}")
+        if len(warnings) > 20:
+            print(f"    ... and {len(warnings) - 20} more warnings")
+
+
 def cmd_diff(args):
-    """Show byte-level diff between two BIN files."""
+    """Show byte-level diff, optionally attributed through a TunerPro XDF."""
     with open(args.bin_a, 'rb') as f:
         data_a = f.read()
     with open(args.bin_b, 'rb') as f:
         data_b = f.read()
 
     if len(data_a) != len(data_b):
-        print(f"WARNING: Files differ in size ({len(data_a)} vs {len(data_b)} bytes)")
+        print(f"ERROR: Files differ in size ({len(data_a)} vs {len(data_b)} bytes); equal-length BINs are required.")
+        return 1
 
     min_len = min(len(data_a), len(data_b))
     diffs = []
@@ -1362,14 +1443,33 @@ def cmd_diff(args):
         if data_a[i] != data_b[i]:
             diffs.append((i, data_a[i], data_b[i]))
 
+    owners = None
+    attribution_warnings = []
+    if getattr(args, 'xdf', None):
+        session = XDFBinSession(args.xdf, args.bin_a)
+        if not session.load():
+            print("ERROR: Failed to load XDF with the first BIN")
+            return 1
+        owners, attribution_warnings = _attribute_xdf_differences(
+            session, (offset for offset, _old, _new in diffs))
+
     print(f"\nDiff: {args.bin_a} vs {args.bin_b}")
     print(f"Size A: {len(data_a)}, Size B: {len(data_b)}")
     print(f"Changed bytes: {len(diffs)}")
 
+    if owners is not None:
+        _print_xdf_diff_summary(
+            owners, (offset for offset, _old, _new in diffs), attribution_warnings)
+
     if diffs:
-        print(f"\n{'ADDRESS':>10}  {'OLD':>5}  {'NEW':>5}  {'OLD_HEX':>8}  {'NEW_HEX':>8}")
+        owner_heading = "  XDF ITEM" if owners is not None else ""
+        print(f"\n{'ADDRESS':>10}  {'OLD':>5}  {'NEW':>5}  {'OLD_HEX':>8}  {'NEW_HEX':>8}{owner_heading}")
         for offset, old, new in diffs[:200]:  # Limit output
-            print(f"0x{offset:08X}  {old:>5}  {new:>5}  0x{old:02X}      0x{new:02X}")
+            owner_text = ""
+            if owners is not None:
+                labels = [_xdf_owner_label(owner) for owner in owners.get(offset, [])]
+                owner_text = "  " + ("; ".join(labels) if labels else "UNMAPPED")
+            print(f"0x{offset:08X}  {old:>5}  {new:>5}  0x{old:02X}      0x{new:02X}{owner_text}")
         if len(diffs) > 200:
             print(f"  ... and {len(diffs) - 200} more differences")
 
@@ -1377,34 +1477,49 @@ def cmd_diff(args):
 
 
 def cmd_export(args):
-    """Export BIN+XDF snapshot to output directory."""
+    """Export a validated snapshot into a new, exclusively created directory."""
     session = XDFBinSession(args.xdf, args.bin)
     if not session.load():
         print("ERROR: Failed to load XDF+BIN")
         return 1
+    try:
+        session.exporter._require_complete_export()
+    except (EquationError, ValueError, IndexError, TypeError, KeyError) as exc:
+        print(f"ERROR: Snapshot validation failed; no output created: {exc}")
+        return 1
 
     ts = _timestamp()
-    output_dir = args.output_dir or os.path.join(os.path.dirname(args.bin), "export")
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Copy BIN
-    bin_name = f"{Path(args.bin).stem}_snapshot_{ts}.bin"
-    bin_out = os.path.join(output_dir, bin_name)
-    with open(bin_out, 'wb') as f:
-        f.write(bytes(session.bin_data))
-
-    # Export all formats using the exporter engine
-    base = os.path.join(output_dir, f"{Path(args.bin).stem}_snapshot_{ts}")
-
-    session.exporter.export_to_text(base + ".txt")
-    session.exporter.export_to_json(base + ".json")
-    session.exporter.export_to_markdown(base + ".md")
+    name = f"{Path(args.bin).stem}_snapshot_{ts}"
+    root = Path(args.output_dir) if args.output_dir else Path(args.bin).parent / "export"
+    output_dir = root / name
+    try:
+        # Existing directories and aliases are refused before any file opens.
+        output_dir.mkdir(parents=True, exist_ok=False)
+        base = output_dir / name
+        results = [session.exporter.export_to_text(str(base) + ".txt"),
+                   session.exporter.export_to_json(str(base) + ".json"),
+                   session.exporter.export_to_markdown(str(base) + ".md")]
+        if not all(results):
+            print(f"ERROR: Snapshot export failed in {output_dir}; no BIN snapshot written.")
+            return 1
+        errors_out = str(base) + "_conversion_errors.json"
+        with open(errors_out, 'x', encoding='utf-8') as f:
+            json.dump({'source_bin': str(Path(args.bin)),
+                       'source_xdf': str(Path(args.xdf)),
+                       'omitted_count': 0, 'errors': []}, f, indent=2)
+        bin_out = str(base) + ".bin"
+        with open(bin_out, 'xb') as f:
+            f.write(bytes(session.bin_data))
+    except OSError as exc:
+        print(f"ERROR: Snapshot output refused or failed: {exc}")
+        return 1
 
     print(f"Exported to {output_dir}:")
     print(f"  BIN: {bin_out}")
     print(f"  TXT: {base}.txt")
     print(f"  JSON: {base}.json")
     print(f"  MD:  {base}.md")
+    print(f"  ERR: {errors_out} (0 omitted definitions)")
     return 0
 
 
@@ -1466,6 +1581,7 @@ def cmd_verify_raw_patch(args):
     print("Verification: PASS (no files written)")
     return 0
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN CLI PARSER
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1479,9 +1595,9 @@ def main():
 Examples:
   %(prog)s list-maps --xdf def.xdf --bin fw.bin
   %(prog)s show-map --xdf def.xdf --bin fw.bin --map "Fuel Map"
-  %(prog)s edit --xdf def.xdf --bin fw.bin --map "Fuel Map" --rows 1-3 --cols 1-2 --value 12.5 --save
-  %(prog)s batch --xdf def.xdf --bin fw.bin --csv edits.csv
-  %(prog)s port --src-xdf ms42.xdf --src-bin ms42.bin --dst-xdf ms43.xdf --dst-bin ms43.bin
+  %(prog)s show-flag --xdf def.xdf --bin fw.bin --name "Enable Feature"
+  %(prog)s edit --xdf def.xdf --bin fw.bin --map "Fuel Map" --rows 1-3 --cols 1-2 --value 12.5 --autosave --output-dir output
+  %(prog)s edit-flag --xdf def.xdf --bin fw.bin --name "Enable Feature" --state set --autosave --output-dir output
   %(prog)s preflight --xdf def.xdf --bin fw.bin
   %(prog)s diff --bin-a original.bin --bin-b edited.bin
   %(prog)s verify-raw-patch --bin fw.bin --manifest patch.json
@@ -1511,6 +1627,13 @@ Examples:
     p_ss.add_argument('--name', required=True, help='Scalar name')
     p_ss.set_defaults(func=cmd_show_scalar)
 
+    # ─── show-flag ───────────────────────────────────────────
+    p_sf = sp.add_parser('show-flag', help='Show a bit flag state')
+    p_sf.add_argument('--xdf', required=True)
+    p_sf.add_argument('--bin', required=True)
+    p_sf.add_argument('--name', required=True, help='Flag name')
+    p_sf.set_defaults(func=cmd_show_flag)
+
     # ─── edit ────────────────────────────────────────────────────────────
     p_edit = sp.add_parser('edit', help='Edit table cells (single or range)')
     p_edit.add_argument('--xdf', required=True)
@@ -1520,8 +1643,8 @@ Examples:
     p_edit.add_argument('--cols', required=True, help="Col: '2' or range '1-4' (1-based)")
     p_edit.add_argument('--value', required=True, type=float, help='Real-world value to set')
     p_edit.add_argument('--raw', action='store_true', help='Treat --value as raw integer')
-    p_edit.add_argument('--save', action='store_true', help='Save immediately after edit')
-    p_edit.add_argument('--output-dir', default=None, help='Output directory (default: <bin_dir>/output)')
+    p_edit.add_argument('--autosave', '--save', dest='autosave', action='store_true', help='Required: save a new BIN with audit logs')
+    p_edit.add_argument('--output-dir', default=None, help='Required output directory; existing files are never overwritten')
     p_edit.set_defaults(func=cmd_edit)
 
     # ─── edit-scalar ─────────────────────────────────────────────────────
@@ -1531,21 +1654,37 @@ Examples:
     p_es.add_argument('--name', required=True, help='Scalar name')
     p_es.add_argument('--value', required=True, type=float)
     p_es.add_argument('--raw', action='store_true')
-    p_es.add_argument('--save', action='store_true')
+    p_es.add_argument('--autosave', '--save', dest='autosave', action='store_true')
     p_es.add_argument('--output-dir', default=None)
     p_es.set_defaults(func=cmd_edit_scalar)
 
+    # ─── edit-flag ───────────────────────────────────────────
+    p_ef = sp.add_parser('edit-flag', help='Set or clear one bit flag')
+    p_ef.add_argument('--xdf', required=True)
+    p_ef.add_argument('--bin', required=True)
+    p_ef.add_argument('--name', required=True, help='Flag name')
+    p_ef.add_argument(
+        '--state', required=True,
+        help='set/clear, on/off, true/false, or 1/0',
+    )
+    p_ef.add_argument('--autosave', '--save', dest='autosave', action='store_true')
+    p_ef.add_argument('--output-dir', default=None)
+    p_ef.set_defaults(func=cmd_edit_flag)
+
     # ─── batch ───────────────────────────────────────────────────────────
-    p_batch = sp.add_parser('batch', help='Apply batch edits from CSV')
+    p_batch = sp.add_parser('batch', help='Disabled: batch transaction validation is not yet supported')
     p_batch.add_argument('--xdf', required=True)
     p_batch.add_argument('--bin', required=True)
-    p_batch.add_argument('--csv', required=True, help='CSV with columns: map,row,col,value')
+    p_batch.add_argument(
+        '--csv', required=True,
+        help='CSV with columns: map,row,col,value and optional type=flag',
+    )
     p_batch.add_argument('--default-map', default=None, help='Default map if CSV lacks map column')
     p_batch.add_argument('--output-dir', default=None)
     p_batch.set_defaults(func=cmd_batch)
 
     # ─── save ────────────────────────────────────────────────────────────
-    p_save = sp.add_parser('save', help='Persist temp edits to final file')
+    p_save = sp.add_parser('save', help='Disabled: unbound temporary saves are not supported')
     p_save.add_argument('--bin', required=True, help='Original BIN path (expects .edited.tmp)')
     p_save.add_argument('--output-dir', default=None)
     p_save.set_defaults(func=cmd_save)
@@ -1558,7 +1697,7 @@ Examples:
     p_export.set_defaults(func=cmd_export)
 
     # ─── port ────────────────────────────────────────────────────────────
-    p_port = sp.add_parser('port', help='Port maps from source to destination')
+    p_port = sp.add_parser('port', help='Disabled: automatic map transformations are not verified')
     p_port.add_argument('--src-xdf', required=True, help='Source XDF')
     p_port.add_argument('--src-bin', required=True, help='Source BIN')
     p_port.add_argument('--dst-xdf', required=True, help='Destination XDF')
@@ -1577,9 +1716,10 @@ Examples:
     p_pre.set_defaults(func=cmd_preflight)
 
     # ─── diff ────────────────────────────────────────────────────────────
-    p_diff = sp.add_parser('diff', help='Byte-level diff between two BINs')
+    p_diff = sp.add_parser('diff', help='Byte-level diff, optionally attributed through a TunerPro XDF')
     p_diff.add_argument('--bin-a', required=True, help='First BIN file')
     p_diff.add_argument('--bin-b', required=True, help='Second BIN file')
+    p_diff.add_argument('--xdf', help='Optional TunerPro XDF used to name changed tables, scalars, flags, and patches')
     p_diff.set_defaults(func=cmd_diff)
 
     # ─── strict raw patch manifests ──────────────────────────────────────
@@ -1620,8 +1760,6 @@ Examples:
         return args.func(args)
     except Exception as e:
         print(f"ERROR: {e}")
-        import traceback
-        traceback.print_exc()
         return 1
 
 

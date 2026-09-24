@@ -1,10 +1,61 @@
 # KingAI CLI Map Editor — AI-Friendly XDF + BIN Editor
 
-**Version:** 1.0.0  
+**Version:** 1.1.0
 **Author:** Jason King (KingAiCodeForge)  
 **Copyright:** (c) 2025 KingAI Pty Ltd
 
 ---
+
+## Current release boundary — 24 September 2026
+
+This is an offline file editor, not a flasher or a vehicle-safety certification.
+The packaged editor depends on Universal Exporter **3.7.2**, pinned to reviewed
+commit `f81e0cd6b522b8142e7424774ec068c9bb711792`. No sibling checkout is needed.
+Python 3.10+ and Git are required to install the pinned dependency:
+
+```console
+python -m pip install .
+kingai-map-editor --help
+```
+
+| Capability | Current boundary |
+|---|---|
+| Read, list, export, diff | Supported XDF forms only; malformed definitions fail closed |
+| One-shot table/scalar edits | Integer storage, supported contiguous layout, bounded affine inverse; requires `--autosave --output-dir` |
+| Flag edits | Bounded mask updates preserving other bits; requires `--autosave --output-dir` |
+| Scoped row/column/cell MATH writes | Refused pending write/log parity tests |
+| `batch`, `port`, standalone `save` | Disabled: partial-success and unbound-temp defects reproduced |
+| Raw patches | Existing strict v2, exact-hash apply/reverse/verify contract retained |
+| Hardware, checksum repair, flashing | Not implemented or certified |
+
+Edits create a new BIN plus project-owned `.log` and detailed CSV. Existing
+outputs are never overwritten. Use the previous output BIN as the next input;
+there is no persistent temp session. Review the actual rounded value and byte
+diff: an engineering value may quantize to the nearest representable integer.
+Float writes, nonlinear inverse math and unsupported storage/strides are refused.
+
+`export` writes into a newly created timestamped snapshot subdirectory and
+refuses a directory collision. An I/O failure is reported as a failure; retain
+any incomplete output for diagnosis and do not use it as a validated BIN.
+
+```console
+kingai-map-editor edit-scalar --xdf definition.xdf --bin original.bin --name "Example scalar" --value 10 --autosave --output-dir output
+kingai-map-editor diff --bin-a original.bin --bin-b output/REPLACE_WITH_ACTUAL_OUTPUT.bin --xdf definition.xdf
+```
+
+TunerPro RT **5.00.10305** (21 January 2026) was the current official download
+and installed reference at this review. See the
+[official download page](https://www.tunerpro.net/downloadApp.htm). That version
+check does not prove every editor write agrees with native TunerPro. Validate
+each exact XDF/BIN pair independently; do not infer support from an ECU name.
+
+Portable synthetic tests run against the installed editor and pinned exporter,
+away from both source trees. CI covers Windows/Linux and Python 3.10/3.13 when
+GitHub Actions can run. A local pass is not a cloud-CI or hardware pass.
+
+The sections below retain historical examples and design context. Where they
+describe batch, port, temp sessions or broader compatibility, this current
+release boundary takes precedence; those operations are not enabled.
 
 ## Compatibility Snapshot (March 2026)
 
@@ -225,7 +276,7 @@ python cli_map_editor.py edit --xdf def.xdf --bin fw.bin --map "Fuel Map" --rows
 python cli_map_editor.py edit-scalar --xdf def.xdf --bin fw.bin --name "RPM Limit" --value 7200 --save
 ```
 
-### `batch` — Apply edits from CSV
+### `batch` — Disabled; historical CSV design
 ```
 python cli_map_editor.py batch --xdf def.xdf --bin fw.bin --csv edits.csv
 ```
@@ -239,7 +290,7 @@ RPM Limit,,,7200
 ```
 Scalars don't need row/col. Maps without a row/col will be treated as scalars.
 
-### `save` — Persist temp edits
+### `save` — Disabled; unbound temp sessions are not supported
 ```
 python cli_map_editor.py save --bin fw.bin --output-dir ./output
 ```
@@ -251,7 +302,7 @@ python cli_map_editor.py export --xdf def.xdf --bin fw.bin --output-dir ./export
 ```
 Creates TXT, JSON, and MD exports of every map/scalar/flag.
 
-### `port` — Port maps between firmware
+### `port` — Disabled; historical interface only
 ```
 # Auto-match by name
 python cli_map_editor.py port --src-xdf ms42.xdf --src-bin ms42.bin --dst-xdf ms43.xdf --dst-bin ms43.bin
@@ -426,15 +477,12 @@ All outputs are timestamped and logged.
 ## Technical Details
 
 ### Inverse Math (Real → Raw Conversion)
-When writing a real-world value (e.g., 13.5 AFR), the tool needs to compute 
-the raw byte value that the ECU stores. It does this by:
 
-1. **Affine detection**: Evaluate the equation at X=0 and X=1000 to derive 
-   `a` and `b` from `real = a*X + b`, then invert: `X = (real - b) / a`
-2. **Numerical search**: If affine detection fails, search raw values 0–65535 
-   to find the closest match
-3. **Round-trip verification**: After computing raw, verify by re-evaluating 
-   the forward equation
+The shared bounded expression parser must prove an equation affine before
+engineering-value writes are allowed. The inverse is rounded to an integer,
+range checked and evaluated with staged dependencies. There is no numerical
+search fallback. Unsupported or unstable conversions are refused. `--raw`
+does not bypass layout, type, range or scoped-equation restrictions.
 
 ### BASEOFFSET Handling
 Inherited from UniversalXDFExporter — handles both `subtract=0` (file has 
@@ -457,6 +505,12 @@ The exporter resolves these automatically via uniqueid index.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+Editor code: MIT License — see [LICENSE](LICENSE).
+
+The required Universal Exporter dependency has a separate **KingAI Custom
+Source-Available License**, including a commercial-permission requirement.
+The editor's MIT license does not relicense that dependency. Review its
+[license at the pinned commit](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter/blob/f81e0cd6b522b8142e7424774ec068c9bb711792/LICENSE)
+before redistribution or commercial use.
 
 Copyright (c) 2025-2026 KingAI Pty Ltd — Jason King

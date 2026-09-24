@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -13,7 +14,7 @@ import pytest
 
 
 REPO = Path(__file__).resolve().parent
-CLI = REPO / "cli_map_editor.py"
+CLI = Path(importlib.util.find_spec("cli_map_editor").origin)
 
 
 def _sha256(data: bytes) -> str:
