@@ -17,6 +17,23 @@ IMAGE_SIZE = 0x80000
 OSID_OFFSET = 0x48008
 OSID = b"0110C6"
 
+VY_PROFILE_ID = "holden-vy-060a-92118883-additive16-bypass-aware-v1"
+VY_IMAGE_SIZE = 0x20000
+VY_OSID_OFFSET = 0x07FFC
+VY_OSID = 92118883
+VY_PROGRAM_ID_OFFSET = 0x04008
+VY_PROGRAM_ID_BYTE = 0xAA
+VY_CHECKSUM_OFFSET = 0x04006
+VY_CHECKSUM_START = 0x02000
+VY_CHECKSUM_SKIP_START = 0x04000
+VY_CHECKSUM_SKIP_END = 0x04008
+VY_CHECKSUM_END = 0x20000
+
+MS43_PROFILE_ID = "bmw-ms43-430069-crc16-v1"
+MS43_IMAGE_SIZE = 0x80000
+MS43_OSID_OFFSET = 0x70008
+MS43_OSID = b"430069"
+
 _RECORDS = (
     {
         "name": "boot",
@@ -42,6 +59,50 @@ _RECORDS = (
             (0x11000, 0x1FFFD),
             (0x20000, 0x2FFFD),
             (0x30000, 0x3FFFF),
+        ),
+    },
+)
+
+_MS43_RECORDS = (
+    {
+        "name": "boot",
+        "offset": 0x03C24,
+        "seed": 0x2D2D,
+        "descriptor_segments": ((0x00000, 0x0308D),),
+        "file_segments": ((0x00000, 0x0308D),),
+    },
+    {
+        "name": "prog",
+        "offset": 0x6FDE0,
+        "seed": 0x3030,
+        "descriptor_segments": (
+            (0x90000, 0x9FFFF),
+            (0xA0000, 0xAFFFB),
+            (0xB0000, 0xBFCB9),
+            (0xC0000, 0xCA8CB),
+            (0xD0000, 0xDFFF7),
+            (0xE0000, 0xEEFFF),
+        ),
+        "file_segments": (
+            (0x10000, 0x1FFFF),
+            (0x20000, 0x2FFFB),
+            (0x30000, 0x3FCB9),
+            (0x40000, 0x4A8CB),
+            (0x50000, 0x5FFF7),
+            (0x60000, 0x6EFFF),
+        ),
+    },
+    {
+        "name": "cal",
+        "offset": 0x73FE0,
+        "seed": 0x3936,
+        "descriptor_segments": (
+            (0x70000, 0x72FFF),
+            (0x74000, 0x7EE17),
+        ),
+        "file_segments": (
+            (0x70000, 0x72FFF),
+            (0x74000, 0x7EE17),
         ),
     },
 )
@@ -97,6 +158,118 @@ def _build_contract() -> dict[str, Any]:
 CHECKSUM_CONTRACT = _build_contract()
 
 
+def _build_vy_contract() -> dict[str, Any]:
+    """Build the exact reviewed VY $060A whole-file checksum contract."""
+    ranges = (
+        (VY_CHECKSUM_START, VY_CHECKSUM_SKIP_START),
+        (VY_CHECKSUM_SKIP_END, VY_CHECKSUM_END),
+    )
+    return {
+        "profile": VY_PROFILE_ID,
+        "covered_ranges": [
+            {"offset": start, "length": end - start} for start, end in ranges
+        ],
+        "stored_ranges": [{"offset": VY_CHECKSUM_OFFSET, "length": 2}],
+        "parameters": {
+            "algorithm": "unsigned-byte-sum-modulo-65536",
+            "accumulator_bits": 16,
+            "range_end": "exclusive",
+            "record_endianness": "big",
+            "image_size": VY_IMAGE_SIZE,
+            "osid": {
+                "offset": VY_OSID_OFFSET,
+                "value": VY_OSID,
+                "hex": f"0x{VY_OSID:08X}",
+                "endianness": "big",
+            },
+            "ecu_checksum_gate": {
+                "offset": VY_PROGRAM_ID_OFFSET,
+                "value": VY_PROGRAM_ID_BYTE,
+                "hex": f"0x{VY_PROGRAM_ID_BYTE:02X}",
+                "state": "bypass",
+                "preserve": True,
+            },
+            "ranges": [
+                {"start": start, "end": end} for start, end in ranges
+            ],
+            "excluded_range": {
+                "start": VY_CHECKSUM_SKIP_START,
+                "end": VY_CHECKSUM_SKIP_END,
+            },
+            "stored_offset": VY_CHECKSUM_OFFSET,
+        },
+    }
+
+
+VY_CHECKSUM_CONTRACT = _build_vy_contract()
+
+
+def _build_ms43_contract() -> dict[str, Any]:
+    """Build the exact 512 KiB MS43 430069 CRC16-only contract."""
+    covered_ranges = []
+    parameter_records = []
+    for record in _MS43_RECORDS:
+        descriptor_segments = [
+            {"start": start, "end": end}
+            for start, end in record["descriptor_segments"]
+        ]
+        file_segments = []
+        for start, end in record["file_segments"]:
+            covered_ranges.append({"offset": start, "length": end - start + 1})
+            file_segments.append({"start": start, "end": end})
+        parameter_records.append(
+            {
+                "name": record["name"],
+                "offset": record["offset"],
+                "seed": record["seed"],
+                "descriptor_segments": descriptor_segments,
+                "file_segments": file_segments,
+            }
+        )
+    return {
+        "profile": MS43_PROFILE_ID,
+        "covered_ranges": covered_ranges,
+        "stored_ranges": [
+            {"offset": record["offset"], "length": 2}
+            for record in _MS43_RECORDS
+        ],
+        "parameters": {
+            "algorithm": "crc16-reflected",
+            "polynomial": 0x8005,
+            "reflected_polynomial": 0xA001,
+            "reflect_input": True,
+            "reflect_output": False,
+            "xor_out": 0,
+            "byte_order": "low-to-high",
+            "record_endianness": "little",
+            "descriptor_end": "inclusive",
+            "image_size": MS43_IMAGE_SIZE,
+            "osid": {
+                "offset": MS43_OSID_OFFSET,
+                "ascii": MS43_OSID.decode("ascii"),
+            },
+            "program_descriptor_file_delta": -0x80000,
+            "scope": "boot/program/calibration CRC16 records only",
+            "excluded_checksum_layers": [
+                {
+                    "name": "program additive monitor",
+                    "offset": 0x6FDAE,
+                    "status": "not verified by this profile",
+                },
+                {
+                    "name": "calibration additive monitor",
+                    "offset": 0x72FFC,
+                    "status": "not verified by this profile",
+                },
+            ],
+            "records": parameter_records,
+        },
+    }
+
+
+MS43_CHECKSUM_CONTRACT = _build_ms43_contract()
+
+
 def _canonical_json(value: Any) -> bytes:
     try:
         return json.dumps(
@@ -110,7 +283,9 @@ def _canonical_json(value: Any) -> bytes:
         raise ChecksumProfileError(f"checksum contract is not canonical JSON: {exc}") from exc
 
 
-def _require_exact_contract(context: Mapping[str, Any]) -> None:
+def _require_exact_named_contract(
+    context: Mapping[str, Any], expected: Mapping[str, Any], profile_id: str
+) -> None:
     if not isinstance(context, Mapping):
         raise ChecksumProfileError("checksum verifier context must be a mapping")
     required_keys = {"profile", "covered_ranges", "stored_ranges", "parameters", "phase"}
@@ -123,7 +298,6 @@ def _require_exact_contract(context: Mapping[str, Any]) -> None:
     if context["phase"] not in ("input", "output"):
         raise ChecksumProfileError("checksum context phase must be 'input' or 'output'")
 
-    expected = _build_contract()
     requested = {
         "profile": context["profile"],
         "covered_ranges": context["covered_ranges"],
@@ -132,8 +306,20 @@ def _require_exact_contract(context: Mapping[str, Any]) -> None:
     }
     if _canonical_json(requested) != _canonical_json(expected):
         raise ChecksumProfileError(
-            f"requested checksum contract does not exactly match trusted profile {PROFILE_ID!r}"
+            f"requested checksum contract does not exactly match trusted profile {profile_id!r}"
         )
+
+
+def _require_exact_contract(context: Mapping[str, Any]) -> None:
+    _require_exact_named_contract(context, _build_contract(), PROFILE_ID)
+
+
+def _require_exact_vy_contract(context: Mapping[str, Any]) -> None:
+    _require_exact_named_contract(context, _build_vy_contract(), VY_PROFILE_ID)
+
+
+def _require_exact_ms43_contract(context: Mapping[str, Any]) -> None:
+    _require_exact_named_contract(context, _build_ms43_contract(), MS43_PROFILE_ID)
 
 
 _CRC_TABLE = []
@@ -249,8 +435,208 @@ def verify_bmw_ms42_0110c6_crc16(
     }
 
 
+def _parse_and_validate_ms43_record(
+    image: bytes, record: Mapping[str, Any]
+) -> tuple[int, list[tuple[int, int]]]:
+    offset = record["offset"]
+    stored = int.from_bytes(image[offset:offset + 2], "little")
+    count = int.from_bytes(image[offset + 2:offset + 4], "little")
+    expected_descriptors = list(record["descriptor_segments"])
+    if count != len(expected_descriptors):
+        raise ChecksumProfileError(
+            f"MS43 {record['name']} descriptor count mismatch at 0x{offset:05X}: "
+            f"expected {len(expected_descriptors)}, got {count}"
+        )
+
+    descriptors = []
+    cursor = offset + 4
+    for _ in range(count):
+        start = int.from_bytes(image[cursor:cursor + 4], "little")
+        end = int.from_bytes(image[cursor + 4:cursor + 8], "little")
+        cursor += 8
+        if start > end:
+            raise ChecksumProfileError(
+                f"MS43 {record['name']} has reversed descriptor "
+                f"0x{start:05X}..0x{end:05X}"
+            )
+        descriptors.append((start, end))
+
+    if descriptors != expected_descriptors:
+        got = ", ".join(f"0x{start:05X}..0x{end:05X}" for start, end in descriptors)
+        wanted = ", ".join(
+            f"0x{start:05X}..0x{end:05X}" for start, end in expected_descriptors
+        )
+        raise ChecksumProfileError(
+            f"MS43 {record['name']} descriptor mismatch at 0x{offset:05X}; "
+            f"expected {wanted}, got {got}"
+        )
+    return stored, descriptors
+
+
+def verify_bmw_ms43_430069_crc16(
+    image: bytes, context: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Verify exact MS43 430069 CRC16 records; additive monitors are out of scope."""
+    _require_exact_ms43_contract(context)
+    if not isinstance(image, (bytes, bytearray, memoryview)):
+        raise ChecksumProfileError("image must be bytes-like")
+    image = bytes(image)
+    if len(image) != MS43_IMAGE_SIZE:
+        raise ChecksumProfileError(
+            f"expected {MS43_IMAGE_SIZE}-byte MS43 full image, got {len(image)} bytes"
+        )
+    actual_osid = image[MS43_OSID_OFFSET:MS43_OSID_OFFSET + len(MS43_OSID)]
+    if actual_osid != MS43_OSID:
+        shown = actual_osid.decode("ascii", errors="replace")
+        raise ChecksumProfileError(
+            f"unsupported MS43 OSID {shown!r} at 0x{MS43_OSID_OFFSET:05X}; "
+            "expected '430069'"
+        )
+
+    details = []
+    all_valid = True
+    for record in _MS43_RECORDS:
+        stored, descriptor_segments = _parse_and_validate_ms43_record(image, record)
+        computed = record["seed"]
+        for start, end in record["file_segments"]:
+            if start > end or end >= len(image):
+                raise ChecksumProfileError(
+                    f"MS43 {record['name']} mapped file range is invalid: "
+                    f"0x{start:05X}..0x{end:05X}"
+                )
+            computed = _crc16(image[start:end + 1], computed)
+        valid = computed == stored
+        all_valid = all_valid and valid
+        details.append(
+            {
+                "name": record["name"],
+                "record_offset": record["offset"],
+                "record_offset_hex": f"0x{record['offset']:05X}",
+                "seed": record["seed"],
+                "seed_hex": f"0x{record['seed']:04X}",
+                "stored": stored,
+                "stored_hex": f"0x{stored:04X}",
+                "computed": computed,
+                "computed_hex": f"0x{computed:04X}",
+                "valid": valid,
+                "descriptor_segments": [
+                    {"start": start, "end": end, "length": end - start + 1}
+                    for start, end in descriptor_segments
+                ],
+                "file_segments": [
+                    {"start": start, "end": end, "length": end - start + 1}
+                    for start, end in record["file_segments"]
+                ],
+            }
+        )
+
+    return {
+        "valid": all_valid,
+        "profile": MS43_PROFILE_ID,
+        "scope": "boot/program/calibration CRC16 records only",
+        "excluded_checksum_layers": [
+            {"name": "program additive monitor", "offset": 0x6FDAE},
+            {"name": "calibration additive monitor", "offset": 0x72FFC},
+        ],
+        "image_size": len(image),
+        "osid": {
+            "offset": MS43_OSID_OFFSET,
+            "ascii": MS43_OSID.decode("ascii"),
+            "matched": True,
+        },
+        "records": details,
+    }
+
+
+def verify_holden_vy_060a_92118883_additive16(
+    image: bytes, context: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Verify the exact 128 KiB VY $060A whole-file checksum without writes."""
+    _require_exact_vy_contract(context)
+    if not isinstance(image, (bytes, bytearray, memoryview)):
+        raise ChecksumProfileError("image must be bytes-like")
+    image = bytes(image)
+    if len(image) != VY_IMAGE_SIZE:
+        raise ChecksumProfileError(
+            f"expected {VY_IMAGE_SIZE}-byte VY full image, got {len(image)} bytes"
+        )
+
+    actual_osid = int.from_bytes(
+        image[VY_OSID_OFFSET:VY_OSID_OFFSET + 4], "big"
+    )
+    if actual_osid != VY_OSID:
+        raise ChecksumProfileError(
+            f"unsupported VY OSID {actual_osid} (0x{actual_osid:08X}) at "
+            f"0x{VY_OSID_OFFSET:05X}; expected {VY_OSID} (0x{VY_OSID:08X})"
+        )
+    actual_program_id = image[VY_PROGRAM_ID_OFFSET]
+    if actual_program_id != VY_PROGRAM_ID_BYTE:
+        raise ChecksumProfileError(
+            f"unsupported VY checksum-gate byte 0x{actual_program_id:02X} at "
+            f"0x{VY_PROGRAM_ID_OFFSET:05X}; expected bypass marker 0xAA"
+        )
+
+    stored = int.from_bytes(
+        image[VY_CHECKSUM_OFFSET:VY_CHECKSUM_OFFSET + 2], "big"
+    )
+    computed = (
+        sum(image[VY_CHECKSUM_START:VY_CHECKSUM_SKIP_START])
+        + sum(image[VY_CHECKSUM_SKIP_END:VY_CHECKSUM_END])
+    ) & 0xFFFF
+    segments = [
+        {
+            "start": VY_CHECKSUM_START,
+            "end": VY_CHECKSUM_SKIP_START - 1,
+            "length": VY_CHECKSUM_SKIP_START - VY_CHECKSUM_START,
+        },
+        {
+            "start": VY_CHECKSUM_SKIP_END,
+            "end": VY_CHECKSUM_END - 1,
+            "length": VY_CHECKSUM_END - VY_CHECKSUM_SKIP_END,
+        },
+    ]
+    return {
+        "valid": stored == computed,
+        "profile": VY_PROFILE_ID,
+        "image_size": len(image),
+        "osid": {
+            "offset": VY_OSID_OFFSET,
+            "value": actual_osid,
+            "hex": f"0x{actual_osid:08X}",
+            "matched": True,
+        },
+        "ecu_checksum_gate": {
+            "offset": VY_PROGRAM_ID_OFFSET,
+            "value": actual_program_id,
+            "hex": f"0x{actual_program_id:02X}",
+            "state": "bypass",
+            "matched": True,
+        },
+        "records": [
+            {
+                "name": "whole-file",
+                "record_offset": VY_CHECKSUM_OFFSET,
+                "record_offset_hex": f"0x{VY_CHECKSUM_OFFSET:05X}",
+                "stored": stored,
+                "stored_hex": f"0x{stored:04X}",
+                "computed": computed,
+                "computed_hex": f"0x{computed:04X}",
+                "valid": stored == computed,
+                "segments": segments,
+                "excluded": {
+                    "start": VY_CHECKSUM_SKIP_START,
+                    "end": VY_CHECKSUM_SKIP_END - 1,
+                    "length": VY_CHECKSUM_SKIP_END - VY_CHECKSUM_SKIP_START,
+                },
+            }
+        ],
+    }
+
+
 TRUSTED_CHECKSUM_VERIFIERS = {
     PROFILE_ID: verify_bmw_ms42_0110c6_crc16,
+    MS43_PROFILE_ID: verify_bmw_ms43_430069_crc16,
+    VY_PROFILE_ID: verify_holden_vy_060a_92118883_additive16,
 }
 
 
@@ -258,8 +644,27 @@ __all__ = [
     "CHECKSUM_CONTRACT",
     "ChecksumProfileError",
     "IMAGE_SIZE",
+    "MS43_CHECKSUM_CONTRACT",
+    "MS43_IMAGE_SIZE",
+    "MS43_OSID",
+    "MS43_OSID_OFFSET",
+    "MS43_PROFILE_ID",
     "OSID_OFFSET",
     "PROFILE_ID",
     "TRUSTED_CHECKSUM_VERIFIERS",
+    "VY_CHECKSUM_CONTRACT",
+    "VY_CHECKSUM_END",
+    "VY_CHECKSUM_OFFSET",
+    "VY_CHECKSUM_SKIP_END",
+    "VY_CHECKSUM_SKIP_START",
+    "VY_CHECKSUM_START",
+    "VY_IMAGE_SIZE",
+    "VY_OSID",
+    "VY_OSID_OFFSET",
+    "VY_PROFILE_ID",
+    "VY_PROGRAM_ID_BYTE",
+    "VY_PROGRAM_ID_OFFSET",
     "verify_bmw_ms42_0110c6_crc16",
+    "verify_bmw_ms43_430069_crc16",
+    "verify_holden_vy_060a_92118883_additive16",
 ]

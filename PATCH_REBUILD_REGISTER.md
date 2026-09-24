@@ -82,19 +82,47 @@ Controlling evidence:
 
 ### P1 — rebuild first
 
-#### Stationary launch fuel cut, patch `0x6A42`
+#### Low-speed launch fuel cut, patch `0x6A42`
 
-- Hook file offset `0x125BA`: `96 A2 A1 00 -> BD FE C0 01` in corrected R07.
-- Routine starts at file `0x17EC0`; full/restart scalars are `0x17EF0` and
-  `0x17EF1`, displayed with `X*25`.
-- R06 is wrong: it encoded `$BEC0/$BEF0/$BEF1`, which points `0x4000` below the
-  intended bank-2 code/data. R07 corrects those operands to
-  `$FEC0/$FEF0/$FEF1` and contains an inverse patch.
-- Remaining blockers: no bound parent SHA, deterministic checksum/apply
-  manifest, register/CCR/stack proof, complete selector-X trace, or runtime
-  proof for the FILTKPH condition.
-- Action: `REBUILD_FIRST` against exact v1.0a and the mapped factory bank-2
-  RPM fuel-cut path `$A547-$A5D5`.
+- Status: `STATIC_PATCH_PROVED / BENCH_NEXT`; this is not vehicle approval.
+- R07 XDF SHA-256 is
+  `48BFCF90D20862A0CBE3208FAD16CDCDD6A291E5DDD34D2849A6146DCE633212`.
+  The strict extractor selects the single patch object `0x6A42` by ID and
+  exact title.
+- The raw Enhanced v1.0a download is SHA-256
+  `5CB8BD1C61DA37A3846B6C28600CDC21DB3CEEF0C764232D0CD7EC8D6E836ABD`.
+  Its stored additive checksum is stale (`0x8E6F`, computed `0x9E9F`) while
+  byte `0x4008` is the preserved `0xAA` ECU checksum-bypass marker. The strict
+  parent is a separately named checksum-only control, SHA-256
+  `34DFC79A76CDE89CA960D3D542BA5ECB572B91B10FF6B1C2A6C2836F16F58FFB`;
+  it differs from the raw download only at `0x4006-0x4007`.
+- Hook file offset `0x125BA` changes `96 A2 A1 00 -> BD FE C0 01`. The routine
+  at `0x17EC0` is 33 bytes and uses corrected bank-2 CPU operands
+  `$FEC0/$FEF0/$FEF1`. Scalars at `0x17EF0-0x17EF1` are `0x50/0x4F`.
+- This is a low-speed gate, not a strictly stationary gate: `$0098` is the
+  upper byte of 16-bit `FILTMPH`, and raw `<=2` is about `<=3.22 km/h`.
+  With strict comparisons and 25-RPM raw scaling, the first cut is 2025 RPM
+  and restart is at or below 1975 RPM.
+- The exact candidate SHA-256 is
+  `88BE273EE50A0CD05B0CA73D578D3B03E77B0CE00F5E5C81C6B39B897A766F75`.
+  It changes 40 bytes in five actual runs: `0x4006-0x4007`,
+  `0x125BA-0x125BD`, `0x17EC0-0x17ED2`, `0x17ED4-0x17EE0`, and
+  `0x17EF0-0x17EF1`. No byte outside the manifest allowlist changes.
+- Strict manifest SHA-256 is
+  `929402B5EC456292533B143DF3E2D36F59AE80B70B7452D84ED93BC956B50F7A`.
+  Forward and reverse evidence SHA-256 values are
+  `25F8A1AFECEC8357A3F4EA7EC925BF30C0BA39CC004763BC4D46A7FF9ECA9B94`
+  and `DAE88197F616E5B189E2F7FE66DF80FB290C80AE680F7ED38F989309E085EB54`.
+  Reverse application restores the exact checksum-control parent.
+- The trusted profile
+  `holden-vy-060a-92118883-additive16-bypass-aware-v1` pins the image size,
+  OSID, checksum ranges, stored word and bypass marker. The candidate stores
+  and computes `0xB017`. Because the ECU bypass marker remains active, this
+  checksum is deterministic artifact-integrity evidence rather than a claim
+  that the ECU enforces it.
+- Next gate: exact spare-PCM identity, recovery path, physical write/readback,
+  stack/timing observation, and logs for `FILTMPH`, selector X and fuel-cut RPM,
+  with the unpatched image as the control.
 
 #### Muncies auxiliary patches
 
@@ -242,6 +270,17 @@ Canonical community patchlist:
   and checksum result.
 - A September audit found all 27 previously checked 128 KiB pairs had layout
   false negatives when treated as offset-zero calibrations.
+- The CLI now registers `bmw-ms43-430069-crc16-v1` for exact 512 KiB
+  `430069` images. On clean M54B25 EU4 LHD SHA-256
+  `0F97B32F0C5AD517F8834E33F909BEAC6771764F0AC79A12569344BDA3F4443D`,
+  it verifies boot `0xC6D5`, program `0x727E`, and calibration `0x5ADF`
+  against the descriptor records at `0x3C24`, `0x6FDE0`, and `0x73FE0`.
+  Its declared scope is CRC16 only: the 32-bit additive monitors at
+  `0x6FDAE` and `0x72FFC` remain outside this profile until their exact
+  algorithm and ranges have independent tests. A known E39 port SHA-256
+  `200BFBA44A41A6CDB1B46ED39A922860C8ECE334D2090633EB2C9EA8AE3C8CBD`
+  is correctly rejected because its calibration stores `0x5ADF` but computes
+  `0xC138`.
 
 ### P1 — canonical patchlist rebuild
 

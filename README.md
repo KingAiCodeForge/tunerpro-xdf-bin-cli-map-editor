@@ -392,6 +392,17 @@ not repair checksums. The registered verifier checks both staged input and
 output against the declared contract. Whole-image SHA-256 remains critical,
 especially for payload bytes outside the ECU's own checksum coverage.
 
+Registered profiles currently include:
+
+- `bmw-ms42-0110c6-crc16-v1` — exact 512 KiB `0110C6` boot, calibration and
+  program CRC16 records;
+- `bmw-ms43-430069-crc16-v1` — exact 512 KiB `430069` boot, program and
+  calibration CRC16 records only; its two 32-bit additive monitors are
+  explicitly outside the profile;
+- `holden-vy-060a-92118883-additive16-bypass-aware-v1` — exact 128 KiB
+  Enhanced `$060A`/92118883 additive checksum plus the preserved `0xAA` ECU
+  checksum-bypass identity byte.
+
 Both commands require the semantic target fields, exact size and whole-image
 hash, all identity probes, every original byte, disjoint chunks and named
 immutable-range hashes. They reject unknown fields, overlaps, out-of-bounds
