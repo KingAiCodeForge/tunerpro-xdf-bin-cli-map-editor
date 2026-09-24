@@ -12,6 +12,7 @@ from raw_patch_checksum_profiles import (
     CHECKSUM_CONTRACT,
     ChecksumProfileError,
     IMAGE_SIZE,
+    MS43_ALL_CHECKSUMS_PROFILE_ID,
     MS43_PROFILE_ID,
     OSID_OFFSET,
     PROFILE_ID,
@@ -111,6 +112,7 @@ def _synthetic_valid_image() -> bytes:
 def test_registry_exports_the_exact_trusted_profile():
     assert set(TRUSTED_CHECKSUM_VERIFIERS) == {
         PROFILE_ID,
+        MS43_ALL_CHECKSUMS_PROFILE_ID,
         MS43_PROFILE_ID,
         VY_PROFILE_ID,
     }

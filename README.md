@@ -399,6 +399,10 @@ Registered profiles currently include:
 - `bmw-ms43-430069-crc16-v1` — exact 512 KiB `430069` boot, program and
   calibration CRC16 records only; its two 32-bit additive monitors are
   explicitly outside the profile;
+- `bmw-ms43-430069-all-five-checksums-v1` — the same three CRC16 records plus
+  the exact program/calibration 32-bit additive monitors, seeds, half-open
+  descriptor ranges and invariant metadata block; repair additive records
+  first because calibration ADD32 storage is covered by calibration CRC16;
 - `holden-vy-060a-92118883-additive16-bypass-aware-v1` — exact 128 KiB
   Enhanced `$060A`/92118883 additive checksum plus the preserved `0xAA` ECU
   checksum-bypass identity byte.

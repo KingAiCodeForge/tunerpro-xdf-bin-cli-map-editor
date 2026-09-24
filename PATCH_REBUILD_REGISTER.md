@@ -120,6 +120,13 @@ Controlling evidence:
   and computes `0xB017`. Because the ECU bypass marker remains active, this
   checksum is deterministic artifact-integrity evidence rather than a claim
   that the ECU enforces it.
+- A bounded HC11 regression executes 24,576 exact cases. It proves 12,288
+  moving cases and 4,608 low-speed fallback cases are state-equivalent to
+  stock, all 7,680 `$77DE/$77DF` launch cases use the intended strict
+  thresholds, and the stack returns to its original value in every case.
+  `B`, `X` and protected CCR bits are preserved at the hook; `A` and
+  `N/Z/V/C` match the effective comparison. This remains bounded emulator
+  evidence, not interrupt, scheduler or physical-output proof.
 - Next gate: exact spare-PCM identity, recovery path, physical write/readback,
   stack/timing observation, and logs for `FILTMPH`, selector X and fuel-cut RPM,
   with the unpatched image as the control.
@@ -276,11 +283,20 @@ Canonical community patchlist:
   it verifies boot `0xC6D5`, program `0x727E`, and calibration `0x5ADF`
   against the descriptor records at `0x3C24`, `0x6FDE0`, and `0x73FE0`.
   Its declared scope is CRC16 only: the 32-bit additive monitors at
-  `0x6FDAE` and `0x72FFC` remain outside this profile until their exact
-  algorithm and ranges have independent tests. A known E39 port SHA-256
+  `0x6FDAE` and `0x72FFC` remain outside that compatibility profile. A known
+  E39 port SHA-256
   `200BFBA44A41A6CDB1B46ED39A922860C8ECE334D2090633EB2C9EA8AE3C8CBD`
   is correctly rejected because its calibration stores `0x5ADF` but computes
   `0xC138`.
+- The stronger `bmw-ms43-430069-all-five-checksums-v1` profile now verifies
+  those three CRC16 records plus both 32-bit additive monitors. It exact-binds
+  the complete 46-byte metadata block (SHA-256
+  `899633798EDDFEFE096D837CE2E007BC091A047FE33D4FBB780AB35F0F8906C7`),
+  separate ECU seed offsets `0x6FDB2` and `0x6FDB8`, and half-open descriptor
+  ranges. Program ADD32 is `0xB3DAAD17`; this parent calibration ADD32 is
+  `0xA6202B49`. The safe repair sequence writes both additive records before
+  the CRC records. Only calibration ADD32-before-calibration CRC is required by
+  coverage; program ADD32 storage lies beyond the last program-CRC byte.
 
 ### P1 — canonical patchlist rebuild
 
@@ -297,11 +313,22 @@ Canonical community patchlist:
 
 ### P2 — first functional patch families
 
-1. Re-trace the cruise-selector patch first because it has the strongest
-   existing guarded/checksummed reference. Its clean base is SHA-256
-   `0F97B32F0C5AD517F8834E33F909BEAC6771764F0AC79A12569344BDA3F4443D`;
-   guarded sites are `0x2A3F2` and `0x2C968`. The current result remains
-   `BLOCKED_FOR_VEHICLE` and lacks an explicit reverse artifact.
+1. Cruise-selector is now `STATIC_V2_ALL_FIVE_VERIFIED / BENCH_NEXT /
+   VEHICLE_UNVERIFIED` for clean parent SHA-256
+   `0F97B32F0C5AD517F8834E33F909BEAC6771764F0AC79A12569344BDA3F4443D`.
+   It changes `0x2A3F2` `9A4E05D0 -> 9A0C0510`, `0x2C968`
+   `8A4E0BD0 -> 8A0C0B10`, and program CRC16 at `0x6FDE0`
+   `7E72 -> F512`; only six bytes actually differ. Exact output SHA-256 is
+   `C2C2D890F54E9AF8F49B4110B6C0F19152D5F3A0B755D4BCC5DE3B2DB955A007`.
+   Manifest SHA-256 is
+   `44227176696CC515E22CC1FE657180BD3887A8ED0B6692E1548FD0D472BA0F06`;
+   canonical forward/reverse evidence hashes are
+   `BDB1364E3C1DCD70D8F49499768055F8F523EB48D1AAB6D1EFF8F2ECF9073762`
+   and `1523B2B4F20C1821660ABF4E41A6225891D62E6EA2BD1468E43F5408CCA76AE4`.
+   The deterministic builder, exact reverse and all five checksum results pass.
+   The 296-byte description remains below the 1024-byte limit. Bench-log
+   `0xFD18.1`, fuel result `0x81AB`, ignition result `0x81D3`, and selector
+   behavior against an unpatched negative control before any vehicle use.
 2. Rebuild ignition cut plus LC/RAL from current control-flow traces; these are
    high-consequence and cannot be certified from the XDF labels alone.
 3. Rebuild Alpha-N, 2048/4096 MAF, boost/load extension and injection

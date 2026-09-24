@@ -43,7 +43,18 @@ The MS43 uses **three CRC16 checksums** + **two 32-bit addition checksums**:
 | **32-bit Addition** | Program (monitor) | 0x6FDAE |
 | **32-bit Addition** | Calibration (monitor) | 0x72FFC |
 
-**Rule:** The addition checksums must be corrected BEFORE the CRC16 checksums, because the addition checksums sit inside the CRC16-protected regions.
+**Repair order:** calculate/store both additive checksums first, then calculate
+the CRC16 records. This order is required for calibration because the ADD32
+word at `0x72FFC-0x72FFF` lies inside calibration CRC coverage
+`0x70000-0x72FFF`. Program ADD32 storage at `0x6FDAE-0x6FDB1` is outside the
+program CRC's final covered byte `0x6EFFF`, so applying the same order there is
+conservative and keeps one deterministic repair sequence.
+
+The CLI's exact `430069` verifier is
+`bmw-ms43-430069-all-five-checksums-v1`. The additive algorithm starts with a
+32-bit seed, adds little-endian 16-bit words modulo `2^32`, and treats range
+ends as exclusive. It pins the complete descriptor/seed metadata block rather
+than accepting arbitrary ranges from a BIN or manifest.
 
 If any checksum is wrong the ECU will NOT start the engine.
 

@@ -395,6 +395,14 @@ sentinel or conversion constant unless the current trace independently proves
 it. Emit a review-only manifest and bench plan before any vehicle candidate.
 ```
 
+The first completed stock-MS43 example is the `430069` cruise-selector
+rebuild. It binds exact clean parent SHA-256
+`0F97B32F0C5AD517F8834E33F909BEAC6771764F0AC79A12569344BDA3F4443D`,
+changes six bytes across the two selector branches and program CRC, verifies
+all three CRC16 and both ADD32 records, and reverses byte-for-byte. Its status
+is `STATIC_V2_ALL_FIVE_VERIFIED / BENCH_NEXT / VEHICLE_UNVERIFIED`; runtime
+cruise-bit/selector tracing, physical write/readback and recovery remain due.
+
 ## Required hand-off receipt
 
 Every candidate needs:
