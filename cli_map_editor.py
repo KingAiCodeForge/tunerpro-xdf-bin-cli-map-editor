@@ -20,6 +20,8 @@
    port         Port maps from source XDF+BIN to destination XDF+BIN
    preflight    Validate XDF+BIN compatibility before editing
    diff         Show byte-level diff between two BIN files
+   apply-raw-patch   Apply an exact-hash, reversible raw-byte patch manifest
+   verify-raw-patch  Verify and stage a raw-byte patch entirely in memory
 
  Author:       Jason King
  GitHub:       https://github.com/KingAiCodeForge
@@ -50,6 +52,12 @@ if sys.platform == 'win32':
 
 # Import the proven exporter engine
 from tunerpro_exporter_for_cli_editor_version import UniversalXDFExporter
+from raw_patch_checksum_profiles import TRUSTED_CHECKSUM_VERIFIERS
+from raw_patch_manifest import (
+    PatchManifestError,
+    apply_patch_manifest,
+    verify_patch_manifest,
+)
 
 __version__ = "1.0.0"
 __author__ = "Jason King"
@@ -1400,6 +1408,64 @@ def cmd_export(args):
     return 0
 
 
+def cmd_apply_raw_patch(args):
+    """Apply a strict exact-image raw patch and emit an audit receipt."""
+    try:
+        receipt = apply_patch_manifest(
+            input_path=args.bin,
+            manifest_path=args.manifest,
+            output_path=args.output,
+            receipt_path=args.receipt,
+            reverse=args.reverse,
+            checksum_verifiers=TRUSTED_CHECKSUM_VERIFIERS,
+        )
+    except PatchManifestError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    proof = receipt["proof"]
+    print(f"Patch: {receipt['patch_id']}")
+    print(f"Direction: {receipt['direction']}")
+    print(f"OSID: {receipt['output']['osid']}")
+    print(f"Input SHA-256:  {receipt['input']['sha256']}")
+    print(f"Output SHA-256: {receipt['output']['sha256']}")
+    print(f"Changed bytes: {proof['changed_bytes']}")
+    print("Expected bytes: MATCH")
+    print("Outside allowlist: 0")
+    print(f"Checksum: {proof['checksum_status'].upper()}")
+    print(f"Evidence SHA-256: {receipt['evidence_sha256']}")
+    print(f"Output: {receipt['output']['path']}")
+    receipt_path = args.receipt or (str(Path(args.output).resolve()) + ".receipt.json")
+    print(f"Receipt: {receipt_path}")
+    return 0
+
+
+def cmd_verify_raw_patch(args):
+    """Verify and stage a strict raw patch without writing any file."""
+    try:
+        verification = verify_patch_manifest(
+            input_path=args.bin,
+            manifest_path=args.manifest,
+            reverse=args.reverse,
+            checksum_verifiers=TRUSTED_CHECKSUM_VERIFIERS,
+        )
+    except PatchManifestError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    proof = verification["proof"]
+    print(f"Patch: {verification['patch_id']}")
+    print(f"Direction: {verification['direction']}")
+    print(f"Input SHA-256:  {verification['input']['sha256']}")
+    print(f"Output SHA-256: {verification['output']['sha256']}")
+    print(f"Changed bytes: {proof['changed_bytes']}")
+    print("Expected bytes: MATCH")
+    print("Outside allowlist: 0")
+    print(f"Checksum: {proof['checksum_status'].upper()}")
+    print(f"Evidence SHA-256: {verification['evidence_sha256']}")
+    print("Verification: PASS (no files written)")
+    return 0
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN CLI PARSER
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1418,6 +1484,9 @@ Examples:
   %(prog)s port --src-xdf ms42.xdf --src-bin ms42.bin --dst-xdf ms43.xdf --dst-bin ms43.bin
   %(prog)s preflight --xdf def.xdf --bin fw.bin
   %(prog)s diff --bin-a original.bin --bin-b edited.bin
+  %(prog)s verify-raw-patch --bin fw.bin --manifest patch.json
+  %(prog)s apply-raw-patch --bin fw.bin --manifest patch.json --output patched.bin
+  %(prog)s apply-raw-patch --reverse --bin patched.bin --manifest patch.json --output restored.bin
 """
     )
     sp = p.add_subparsers(dest='command', required=True)
@@ -1512,6 +1581,39 @@ Examples:
     p_diff.add_argument('--bin-a', required=True, help='First BIN file')
     p_diff.add_argument('--bin-b', required=True, help='Second BIN file')
     p_diff.set_defaults(func=cmd_diff)
+
+    # ─── strict raw patch manifests ──────────────────────────────────────
+    p_verify_patch = sp.add_parser(
+        'verify-raw-patch',
+        help='Verify and stage an exact-hash raw-byte patch without writing',
+    )
+    p_verify_patch.add_argument('--bin', required=True, help='Exact input BIN')
+    p_verify_patch.add_argument('--manifest', required=True, help='Strict JSON patch manifest')
+    p_verify_patch.add_argument(
+        '--reverse',
+        action='store_true',
+        help='Require patched_sha256 and verify restoration of the exact base image',
+    )
+    p_verify_patch.set_defaults(func=cmd_verify_raw_patch)
+
+    p_patch = sp.add_parser(
+        'apply-raw-patch',
+        help='Apply or reverse an exact-hash raw-byte patch manifest',
+    )
+    p_patch.add_argument('--bin', required=True, help='Exact input BIN')
+    p_patch.add_argument('--manifest', required=True, help='Strict JSON patch manifest')
+    p_patch.add_argument('--output', required=True, help='New output BIN; never overwritten')
+    p_patch.add_argument(
+        '--receipt',
+        default=None,
+        help='JSON receipt path (default: <output>.receipt.json)',
+    )
+    p_patch.add_argument(
+        '--reverse',
+        action='store_true',
+        help='Require patched_sha256 and restore the exact base image',
+    )
+    p_patch.set_defaults(func=cmd_apply_raw_patch)
 
     args = p.parse_args()
     try:

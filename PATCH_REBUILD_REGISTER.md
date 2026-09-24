@@ -1,6 +1,6 @@
 # Patch and Formula Rebuild Register
 
-**Updated:** 20 September 2026
+**Updated:** 24 September 2026
 **Scope:** Holden VY `$060A`, BMW MS42 `0110C6`, stock BMW MS43 `430069`, and MS43X001
 **Status:** active rebuild queue; no legacy artifact is approved for vehicle use
 
@@ -195,20 +195,36 @@ Canonical clean M52TUB28 EU3 RHD parent SHA-256:
 ### P2 — first MS42 ASM proof
 
 - Prefer the `0110C6` DS2 Logging Feature Enhancement over a hardcut, launch or
-  combustion patch. Community patchlist v1.7.1 places payloads at `0x60E00`
-  (256 bytes) and `0x60F00` (200 bytes), with a hook at `0x20950` changing
-  `DA 01 26 D2 0D 02` to `FA 06 00 0E CC 00`.
-- Those original hook bytes match the canonical clean parent. The matching
-  M52TUB28 ADX SHA-256 is
-  `2BFE535BB6CC9E628B6ED740CC355794CBED1E3EF1DEA46D460CB8446F7C8B46`.
-- Action: `REBUILD_FIRST` into the common exact-parent manifest. Then make one
-  manual 9600-baud bench transaction with complete DS2 frame
-  `12 05 0B B0 AC`, verify `12 49 A0` framing, length/XOR and plausible values,
-  and compare an unpatched DME as the negative control. The retained ADX
-  automatically switches to 125000 baud; keep it as a later high-speed
+  combustion patch. Its strict manifest is bound to clean parent SHA-256
+  `65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`
+  and produces final SHA-256
+  `AF72CCEB84CF12D75A8791051A43BCE00F4CC33447ECF51C3B1B2625810ED9DD`.
+- The rebuilt `kingai.raw-patch.v2` manifest SHA-256 is
+  `94CE827E565747F5E559646D8D5AC8D60CBF63CD6BCC7D4F333048E23C24C579`.
+  Trusted-profile forward verification produces canonical-evidence SHA-256
+  `2E4AC373CF1D25596B2E2883DF9DDE68E8A0A29B8AFDD1F8D174775463D204F3`;
+  reverse verification produces
+  `D4DB8B5CD5CCBF61468748F633670757818D8DB0EF62AB8A9F9AD21406033EE0`.
+- The four declared chunks are the hook at `0x20950-0x20955`
+  (`DA 01 26 D2 0D 02 -> FA 06 00 0E CC 00`), program-CRC bytes at
+  `0x50306-0x50307` (`47 F3 -> 88 AF`), logger part 1 at
+  `0x60E00-0x60EFF` (256 bytes), and logger part 2 at
+  `0x60F00-0x60FC7` (200 declared bytes, 198 actual changes). The result has
+  exactly 462 changed bytes and no changes outside those ranges. Boot, CAL and
+  program checksums all verify, and reverse application restores the exact
+  clean-parent SHA-256.
+- The hook is covered by the ECU program CRC, but the complete payload range
+  `0x60E00-0x60FC7` is outside ECU program-CRC coverage. Therefore the valid
+  ECU checksums cannot authenticate the logger body; require the complete
+  final-image SHA-256 and physical readback match at the bench gate.
+- Action: `STATIC_PROVED / BENCH_NEXT`, not approved for an on-car flash. Make
+  one manual 9600-baud bench transaction with complete DS2 frame
+  `12 05 0B B0 AC`, require a reply beginning `12 49 A0` with coherent
+  length/XOR and plausible values, and compare an unpatched DME as the negative
+  control. The matching M52TUB28 ADX SHA-256 is
+  `2BFE535BB6CC9E628B6ED740CC355794CBED1E3EF1DEA46D460CB8446F7C8B46`;
+  it automatically switches to 125000 baud, so keep it as a later high-speed
   reference and do not combine baud-bypass or speed patches in the first test.
-  The exact `0110C6` checksum profile is now available; a retained patched
-  output hash, verification result, readback and recovery proof are not.
 
 ## Stock BMW MS43 `430069`
 
@@ -359,8 +375,9 @@ their program regions forward wholesale.
 5. Native-check the checksum-valid, bounded MS42 throttle reconstruction and
    complete its exact-DME/recovery/write-readback gates; retain the five-map
    ghost-cam body for signedness/axis forensics only.
-6. Rebuild the MS42 DS2 logger, VY stationary launch and stock-MS43 cruise
-   selector as the first exact-parent patch examples.
+6. Bench the `STATIC_PROVED` MS42 DS2 logger with exact full-image readback;
+   rebuild VY stationary launch and stock-MS43 cruise selector as the next
+   exact-parent patch examples.
 7. Bench the strongest retained VY v47/v48/v51 and ghost-cam candidates after
    their remaining control-flow proofs close.
 8. Re-disassemble official MS43X releases and rebuild LC/RAL/NLS/AFR/limiter

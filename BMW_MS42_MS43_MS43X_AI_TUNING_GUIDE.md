@@ -267,12 +267,30 @@ back, and prove checksum/recovery before modifying ignition or injection
 scheduling. A screenshot is not enough to assemble a patch.
 
 The preferred first ASM proof is the `0110C6` DS2 Logging Feature Enhancement,
-not a hardcut, launch or combustion patch. In community patchlist v1.7.1 its
-isolated payload occupies `0x60E00` (256 bytes), `0x60F00` (200 bytes) and a
-hook at `0x20950` changing `DA 01 26 D2 0D 02` to
-`FA 06 00 0E CC 00`. Those original hook bytes match the canonical clean
-parent, but that is only static base-byte proof. The parent SHA-256 is
-`65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`.
+not a hardcut, launch or combustion patch. Its strict manifest, extracted from
+community patchlist v1.7.1, declares a hook at `0x20950-0x20955` changing
+`DA 01 26 D2 0D 02` to `FA 06 00 0E CC 00`, program-CRC bytes at
+`0x50306-0x50307` changing `47 F3` to `88 AF`, logger part 1 at
+`0x60E00-0x60EFF` (256 bytes), and logger part 2 at `0x60F00-0x60FC7`
+(200 declared bytes, 198 actual changes). The manifest is bound to clean parent
+SHA-256 `65C3B91A05A0D6AE40F82E39F327FDC2FF672F9B61E2C3233780535E44539F90`
+and produces final SHA-256
+`AF72CCEB84CF12D75A8791051A43BCE00F4CC33447ECF51C3B1B2625810ED9DD`.
+The strict-v2 manifest SHA-256 is
+`94CE827E565747F5E559646D8D5AC8D60CBF63CD6BCC7D4F333048E23C24C579`;
+its trusted-profile forward and reverse canonical-evidence SHA-256 values are
+`2E4AC373CF1D25596B2E2883DF9DDE68E8A0A29B8AFDD1F8D174775463D204F3`
+and `D4DB8B5CD5CCBF61468748F633670757818D8DB0EF62AB8A9F9AD21406033EE0`.
+The output has exactly 462 actual changed bytes, no changes outside the four
+declared ranges, and valid boot, CAL and program checksums. Reverse application
+restores the exact clean-parent SHA-256.
+
+The hook is covered by the ECU program CRC, but the logger payload at
+`0x60E00-0x60FC7` is outside ECU program-CRC coverage. A valid program CRC
+therefore does not authenticate the payload. Require the complete final-image
+SHA-256 and a matching physical readback before executing it. This is
+`STATIC_PROVED / BENCH_NEXT`, not approved for an on-car flash.
+
 First bench proof should be one manual 9600-baud transaction: send the complete
 DS2 frame `12 05 0B B0 AC`, verify the `12 49 A0` reply framing, length/XOR and
 plausible values, and compare an unpatched clean DME as a negative control. Do
@@ -280,14 +298,10 @@ not initially combine the separate baud-bypass or speed increase patches. The
 matching M52TUB28 ADX currently has SHA-256
 `2BFE535BB6CC9E628B6ED740CC355794CBED1E3EF1DEA46D460CB8446F7C8B46`.
 That ADX automatically switches to 125000 baud, so treat it as a later
-high-speed reference rather than the first manual proof. The firmware patch
-remains a bench-only candidate. The exact `0110C6` CRC profile is now
-independently reproduced across four distinct pinned, checksum-valid `0110C6`
-stock/reference images: boot seed `0x2D2D`, CAL seed `0x3643` and program seed
-`0x3030`, with exact descriptor validation.
-This removes the offline checksum unknown, but the patch still needs a retained
-patched-output hash, checksum result, physical DME readback, request/reply trace
-and recovery proof.
+high-speed reference rather than the first manual proof; do not combine its
+baud behavior or any separate speed patch in this test. Physical DME readback,
+request/reply trace, recovery proof and repeated power-cycle behavior remain
+open bench gates.
 
 ### 8. Overrun sound / A-C or cruise selector
 

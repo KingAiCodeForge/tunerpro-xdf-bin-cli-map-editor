@@ -274,6 +274,91 @@ Checks: address validity, table overlap, read access, BASEOFFSET handling.
 python cli_map_editor.py diff --bin-a original.bin --bin-b edited.bin
 ```
 
+### `verify-raw-patch` / `apply-raw-patch` — Strict v2 ASM/raw patches
+
+```powershell
+# Read-only: validates and stages the result in memory; writes no files
+python cli_map_editor.py verify-raw-patch `
+  --bin exact-base.bin --manifest strict-patch.json
+
+# Forward apply: creates a new BIN and JSON receipt
+python cli_map_editor.py apply-raw-patch `
+  --bin exact-base.bin --manifest strict-patch.json --output new-patched.bin
+
+# Reverse uses the patched hash/bytes and must restore the exact base hash
+python cli_map_editor.py apply-raw-patch --reverse `
+  --bin new-patched.bin --manifest strict-patch.json --output restored-base.bin
+```
+
+Raw code patches remain separate from XDF map editing and `port`. Manifests must
+use `kingai.raw-patch.v2` and literal `file_offset` addresses; v1 is rejected
+because it lacks the required target layout, generic identity probes and named
+immutable ranges. A concise generic shape is:
+
+```json
+{
+  "schema": "kingai.raw-patch.v2",
+  "patch_id": "<ecu>-<software>-<feature>-v1",
+  "address_space": "file_offset",
+  "target": {
+    "ecu": "<exact ECU family>",
+    "software_id": "<exact software/OS ID>",
+    "image_layout": "<layout and address basis>",
+    "architecture": "<CPU architecture>",
+    "parent_filename": "<exact-parent.bin>",
+    "size": 524288,
+    "base_sha256": "<64 hex>",
+    "patched_sha256": "<64 hex>",
+    "identity_probes": [
+      {"name": "software identity", "offset": "0x...", "expected_hex": "<literal hex>"}
+    ]
+  },
+  "chunks": [
+    {
+      "name": "exact hook or payload",
+      "kind": "code",
+      "offset": "0x...",
+      "expected_hex": "<literal original bytes>",
+      "replacement_hex": "<literal replacement bytes>"
+    }
+  ],
+  "immutable_ranges": [
+    {"name": "untouched code", "offset": "0x...", "length": "0x...", "sha256": "<64 hex>"}
+  ],
+  "checksum": {
+    "profile": "<registered in-process profile>",
+    "covered_ranges": [{"offset": "0x...", "length": "0x..."}],
+    "stored_ranges": [{"offset": "0x...", "length": "0x..."}],
+    "parameters": {"<profile-specific key>": "<value>"}
+  }
+}
+```
+
+The checksum object is optional. If present, its profile must be registered in
+the CLI's trusted in-process verifier registry; otherwise validation fails
+closed. A manifest can never supply or execute a command, and this path does
+not repair checksums. The registered verifier checks both staged input and
+output against the declared contract. Whole-image SHA-256 remains critical,
+especially for payload bytes outside the ECU's own checksum coverage.
+
+Both commands require the semantic target fields, exact size and whole-image
+hash, all identity probes, every original byte, disjoint chunks and named
+immutable-range hashes. They reject unknown fields, overlaps, out-of-bounds
+ranges and any undeclared change. `verify-raw-patch --reverse` can also prove
+the reverse path without writing.
+
+`apply-raw-patch` refuses in-place writes and never overwrites an existing BIN
+or receipt. It rereads the new BIN from disk and verifies its bytes and hash
+before writing the receipt. The receipt separates a canonical, path-free and
+timestamp-free evidence object from run paths and time metadata; only the
+canonical object determines the reproducible `evidence_sha256`. Reverse mode
+requires the exact patched image and must reproduce the exact base SHA-256.
+
+These checks prove the static byte contract, not instruction semantics or safe
+runtime behavior. Code patches still require disassembly review, controlled
+bench execution, physical write/readback, recovery proof and vehicle-specific
+validation before vehicle use.
+
 ---
 
 ## Safety Rules
@@ -292,8 +377,8 @@ rebuild legacy patches/formulas from the latest disassembly and tracing.
 2. **Run `preflight` before any edits** — catches address errors, overlaps, mismatches
 3. **Run `show-map` before editing** — verify you're changing the right table
 4. **Review logs after every save** — logs are TunerPro-compatible CSV
-5. **Do NOT flash without checksum verification** — this tool does not compute ECU checksums
-6. **Patch tables are SKIP only** — never port code patches between firmware versions
+5. **Do NOT flash without checksum verification** — use a registered exact-profile verifier and require a passing result
+6. **Never send patch tables through `port`** — ASM/raw changes require the exact-hash `apply-raw-patch` manifest path and separate code/checksum/recovery proof
 
 ---
 
