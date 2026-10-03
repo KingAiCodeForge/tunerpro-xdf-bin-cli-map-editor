@@ -73,5 +73,11 @@ copilot-instructions-OLD-transcript.md
 # Private dev notes
 DEV_NOTES_PRIVATE.md
 
+# Runtime secrets belong in local environment configuration, never in Git
+/local/
+.env
+.env.*
+!.env.example
+
 # Local test runner with hardcoded paths
 run_test_suite.py
