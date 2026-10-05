@@ -22,6 +22,7 @@
    port         Disabled pending verified transformations and transactional writes
    preflight    Validate XDF+BIN compatibility before editing
    validate-fixture  Verify exact BIN/XDF hashes, then run preflight
+   export-fixture    Verify exact pair, preflight, then create a guarded snapshot
    diff         Show byte-level diff, optionally attributed through a TunerPro XDF
    apply-raw-patch   Apply an exact-hash, reversible raw-byte patch manifest
    verify-raw-patch  Verify and stage a raw-byte patch entirely in memory
@@ -1296,6 +1297,16 @@ def cmd_validate_fixture(args):
 
 
 
+
+def cmd_export_fixture(args):
+    """Verify exact-pair identity and preflight before using the existing snapshot exporter."""
+    if cmd_validate_fixture(args) != 0:
+        print("FAIL: Fixture export blocked because exact-pair validation/preflight failed.")
+        return 1
+    return cmd_export(args)
+
+
+
 def cmd_preflight(args):
     """Validate XDF+BIN compatibility."""
     session = XDFBinSession(args.xdf, args.bin)
@@ -1838,6 +1849,18 @@ Examples:
     p_fixture.add_argument('--xdf', required=True, help='Exact XDF to verify')
     p_fixture.add_argument('--bin', required=True, help='Exact BIN to verify')
     p_fixture.set_defaults(func=cmd_validate_fixture)
+
+    # ─── export-fixture ─────────────────────────────────────────────────
+    p_export_fixture = sp.add_parser(
+        'export-fixture',
+        help='Verify exact-pair fixture and preflight before creating a snapshot',
+    )
+    p_export_fixture.add_argument('--fixture', required=True, help='Exact-pair fixture JSON')
+    p_export_fixture.add_argument('--target-id', required=True, help='Fixture target_id to select')
+    p_export_fixture.add_argument('--xdf', required=True, help='Exact XDF to verify/export')
+    p_export_fixture.add_argument('--bin', required=True, help='Exact BIN to verify/export')
+    p_export_fixture.add_argument('--output-dir', required=True, help='Parent directory for guarded snapshot')
+    p_export_fixture.set_defaults(func=cmd_export_fixture)
 
     # ─── diff ────────────────────────────────────────────────────────────
     p_diff = sp.add_parser('diff', help='Byte-level diff, optionally attributed through a TunerPro XDF')
