@@ -138,3 +138,21 @@ def test_fixture_validation_creates_no_files(tmp_path, monkeypatch):
     assert editor.cmd_validate_fixture(args) == 0
     after = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
     assert before == after
+
+
+def test_export_fixture_blocks_before_export_on_validation_failure(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(editor, "cmd_validate_fixture", lambda _args: 1)
+    monkeypatch.setattr(editor, "cmd_export", lambda _args: calls.append("export") or 0)
+    args = SimpleNamespace()
+    assert editor.cmd_export_fixture(args) == 1
+    assert calls == []
+
+
+def test_export_fixture_reuses_existing_export_after_validation(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(editor, "cmd_validate_fixture", lambda _args: calls.append("validate") or 0)
+    monkeypatch.setattr(editor, "cmd_export", lambda _args: calls.append("export") or 0)
+    args = SimpleNamespace()
+    assert editor.cmd_export_fixture(args) == 0
+    assert calls == ["validate", "export"]
