@@ -55,9 +55,10 @@ each exact XDF/BIN pair independently; do not infer support from an ECU name.
 
 ```console
 python cli_map_editor.py validate-fixture --fixture exact_pairs.json --target-id ms42_0110ad --xdf definition.xdf --bin stock.bin
+python cli_map_editor.py export-fixture --fixture exact_pairs.json --target-id ms42_0110ad --xdf definition.xdf --bin stock.bin --output-dir regression_exports
 ```
 
-Supported fixture schemas are `kingai.exact-pair-fixture-set.v1` and a single `kingai.exact-bin-xdf-fixture.v1`. The manifest may record broader evidence, but this command deliberately treats only exact artifact identity and the existing preflight as hard checks. It does not validate semantic names, native TunerPro parity, checksum correctness, a tune, or flash safety.
+Supported fixture schemas are `kingai.exact-pair-fixture-set.v1` and a single `kingai.exact-bin-xdf-fixture.v1`. The manifest may record broader evidence, but these commands deliberately treat only exact artifact identity and the existing preflight as hard checks. `export-fixture` reuses the existing guarded snapshot exporter only after validation succeeds. Neither command validates semantic names, native TunerPro parity, checksum correctness, a tune, or flash safety.
 
 Portable synthetic tests run against the installed editor and pinned exporter,
 away from both source trees. CI covers Windows/Linux and Python 3.10/3.13 when
