@@ -34,6 +34,7 @@
 
 import argparse
 import csv
+import hashlib
 import json
 import io
 import math
@@ -194,6 +195,8 @@ class XDFBinSession:
 
     def read_scalar_value(self, const: Dict) -> Tuple[Optional[int], Optional[float]]:
         """Read a scalar's raw and real value."""
+        if const.get('math_element') is not None and not (const.get('equation') or '').strip():
+            raise ValueError(f"Scalar '{const['title']}' has a blank XDF MATH equation")
         original = self.exporter.bin_data
         self.exporter.bin_data = bytes(self.bin_data)
         try:
@@ -209,7 +212,7 @@ class XDFBinSession:
             raise ValueError(f"Flag '{flag['title']}' has invalid mask {mask!r}")
         file_offset = self.exporter._xdf_addr_to_file_offset(address)
         raw = self._read_raw_at(file_offset, 8)
-        return raw, bool(raw & mask)
+        return raw, (raw & mask) == mask
 
     def _current_variables(self, item, table=None, row=0, col=0):
         original = self.exporter.bin_data
@@ -399,6 +402,11 @@ class XDFBinSession:
         signed = const.get('signed', False)
         lsb_first = const.get('lsb_first', False)
         equation = const.get('equation', '')
+        if not raw_mode and const.get('math_element') is not None and not equation.strip():
+            raise ValueError(
+                f"Scalar '{const['title']}' has a blank XDF MATH equation; "
+                "use an explicit raw edit only with independent byte evidence"
+            )
         linked_vars = self._current_variables(const)
 
         if not math.isfinite(real_value):
@@ -492,7 +500,7 @@ class XDFBinSession:
 
         file_offset = self.exporter._xdf_addr_to_file_offset(address)
         old_raw = self._read_raw_at(file_offset, 8)
-        old_state = bool(old_raw & mask)
+        old_state = (old_raw & mask) == mask
         new_raw = (old_raw | mask) if state else (old_raw & (~mask & 0xFF))
         self._write_raw_at(file_offset, 8, new_raw)
 
@@ -1296,7 +1304,11 @@ def _xdf_owner_label(owner: Dict[str, Any]) -> str:
     return label
 
 
-def _attribute_xdf_differences(session: XDFBinSession, changed_offsets) -> Tuple[Dict[int, List[Dict]], List[str]]:
+def _attribute_xdf_differences(
+    session: XDFBinSession,
+    changed_offsets,
+    byte_changes: Optional[Dict[int, Tuple[Optional[int], Optional[int]]]] = None,
+) -> Tuple[Dict[int, List[Dict]], List[str]]:
     """Map changed file offsets to parsed TunerPro XDF items without guessing."""
     wanted = set(changed_offsets)
     owners: Dict[int, List[Dict[str, Any]]] = {}
@@ -1359,7 +1371,15 @@ def _attribute_xdf_differences(session: XDFBinSession, changed_offsets) -> Tuple
     for flag in session.flags:
         title = flag.get('title') or '<untitled flag>'
         try:
-            add_owner(translated(int(flag['address'])), {
+            offset = translated(int(flag['address']))
+            mask = flag.get('mask', 0x01)
+            if not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
+                raise ValueError(f"invalid mask {mask!r}")
+            if byte_changes is not None and offset in byte_changes:
+                old, new = byte_changes[offset]
+                if old is not None and new is not None and ((old ^ new) & mask) == 0:
+                    continue
+            add_owner(offset, {
                 'kind': 'flag',
                 'title': title,
                 'uniqueid': flag.get('uniqueid'),
@@ -1428,50 +1448,160 @@ def _print_xdf_diff_summary(owners: Dict[int, List[Dict]], changed_offsets, warn
 
 def cmd_diff(args):
     """Show byte-level diff, optionally attributed through a TunerPro XDF."""
+    json_out = getattr(args, 'json_out', None)
+    csv_out = getattr(args, 'csv_out', None)
+    xdf_only = getattr(args, 'xdf_only', False)
+    xdf_path = getattr(args, 'xdf', None)
+    allow_size_mismatch = getattr(args, 'allow_size_mismatch', False)
+
+    if xdf_only and not xdf_path:
+        print("ERROR: --xdf-only requires --xdf")
+        return 1
+
+    input_paths = {
+        Path(path).resolve() for path in (args.bin_a, args.bin_b, xdf_path) if path
+    }
+    report_paths = [Path(path).resolve() for path in (json_out, csv_out) if path]
+    if len(report_paths) != len(set(report_paths)) or any(
+        path in input_paths for path in report_paths
+    ):
+        print("ERROR: Report paths must be distinct and must not overwrite a BIN or XDF")
+        return 1
+    existing_reports = [path for path in report_paths if path.exists()]
+    if existing_reports:
+        print(f"ERROR: Refusing to overwrite existing report: {existing_reports[0]}")
+        return 1
+
     with open(args.bin_a, 'rb') as f:
         data_a = f.read()
     with open(args.bin_b, 'rb') as f:
         data_b = f.read()
 
-    if len(data_a) != len(data_b):
+    if len(data_a) != len(data_b) and not allow_size_mismatch:
         print(f"ERROR: Files differ in size ({len(data_a)} vs {len(data_b)} bytes); equal-length BINs are required.")
         return 1
+    if len(data_a) != len(data_b):
+        print(f"WARNING: Files differ in size ({len(data_a)} vs {len(data_b)} bytes)")
 
-    min_len = min(len(data_a), len(data_b))
     diffs = []
-    for i in range(min_len):
-        if data_a[i] != data_b[i]:
-            diffs.append((i, data_a[i], data_b[i]))
+    compare_length = max(len(data_a), len(data_b)) if allow_size_mismatch else len(data_a)
+    for i in range(compare_length):
+        old = data_a[i] if i < len(data_a) else None
+        new = data_b[i] if i < len(data_b) else None
+        if old != new:
+            diffs.append((i, old, new))
 
     owners = None
     attribution_warnings = []
-    if getattr(args, 'xdf', None):
-        session = XDFBinSession(args.xdf, args.bin_a)
+    if xdf_path:
+        session = XDFBinSession(xdf_path, args.bin_a)
         if not session.load():
             print("ERROR: Failed to load XDF with the first BIN")
             return 1
         owners, attribution_warnings = _attribute_xdf_differences(
-            session, (offset for offset, _old, _new in diffs))
+            session,
+            (offset for offset, _old, _new in diffs),
+            {offset: (old, new) for offset, old, new in diffs},
+        )
+
+    selected = [row for row in diffs if owners.get(row[0])] if xdf_only else diffs
+
+    report_payloads: List[Tuple[Path, str]] = []
+    if json_out:
+        report = {
+            'schema': 'kingai.bin-diff.v1',
+            'bin_a': {
+                'name': Path(args.bin_a).name,
+                'size': len(data_a),
+                'sha256': hashlib.sha256(data_a).hexdigest().upper(),
+            },
+            'bin_b': {
+                'name': Path(args.bin_b).name,
+                'size': len(data_b),
+                'sha256': hashlib.sha256(data_b).hexdigest().upper(),
+            },
+            'xdf': Path(xdf_path).name if xdf_path else None,
+            'filter': 'xdf_owned_bytes' if xdf_only else 'all_changed_bytes',
+            'total_changed_bytes': len(diffs),
+            'selected_changed_bytes': len(selected),
+            'attribution_warnings': attribution_warnings,
+            'rows': [{
+                'file_offset': offset,
+                'old_byte': old,
+                'new_byte': new,
+                'owners': (owners or {}).get(offset, []),
+            } for offset, old, new in selected],
+        }
+        report_payloads.append((
+            Path(json_out), json.dumps(report, indent=2) + '\n',
+        ))
+
+    if csv_out:
+        csv_buffer = io.StringIO(newline='')
+        writer = csv.writer(csv_buffer)
+        writer.writerow([
+            'file_offset', 'old_byte', 'new_byte',
+            'old_hex', 'new_hex', 'xdf_owners',
+        ])
+        for offset, old, new in selected:
+            labels = [
+                _xdf_owner_label(owner) for owner in (owners or {}).get(offset, [])
+            ]
+            writer.writerow([
+                offset,
+                old,
+                new,
+                f'0x{old:02X}' if old is not None else '',
+                f'0x{new:02X}' if new is not None else '',
+                '; '.join(labels),
+            ])
+        report_payloads.append((Path(csv_out), csv_buffer.getvalue()))
+
+    for path, _payload in report_payloads:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    with ExitStack() as stack:
+        handles = [
+            stack.enter_context(path.open('x', encoding='utf-8', newline=''))
+            for path, _payload in report_payloads
+        ]
+        for handle, (_path, payload) in zip(handles, report_payloads):
+            handle.write(payload)
 
     print(f"\nDiff: {args.bin_a} vs {args.bin_b}")
     print(f"Size A: {len(data_a)}, Size B: {len(data_b)}")
     print(f"Changed bytes: {len(diffs)}")
+    if xdf_only:
+        print(f"XDF-owned changed bytes: {len(selected)}")
 
     if owners is not None:
         _print_xdf_diff_summary(
-            owners, (offset for offset, _old, _new in diffs), attribution_warnings)
+            owners, (offset for offset, _old, _new in selected), attribution_warnings)
 
-    if diffs:
+    if selected:
         owner_heading = "  XDF ITEM" if owners is not None else ""
         print(f"\n{'ADDRESS':>10}  {'OLD':>5}  {'NEW':>5}  {'OLD_HEX':>8}  {'NEW_HEX':>8}{owner_heading}")
-        for offset, old, new in diffs[:200]:  # Limit output
+        for offset, old, new in selected[:200]:  # Limit console output
             owner_text = ""
             if owners is not None:
                 labels = [_xdf_owner_label(owner) for owner in owners.get(offset, [])]
                 owner_text = "  " + ("; ".join(labels) if labels else "UNMAPPED")
-            print(f"0x{offset:08X}  {old:>5}  {new:>5}  0x{old:02X}      0x{new:02X}{owner_text}")
-        if len(diffs) > 200:
-            print(f"  ... and {len(diffs) - 200} more differences")
+            old_text = str(old) if old is not None else '-'
+            new_text = str(new) if new is not None else '-'
+            old_hex = f'0x{old:02X}' if old is not None else '--'
+            new_hex = f'0x{new:02X}' if new is not None else '--'
+            print(
+                f"0x{offset:08X}  {old_text:>5}  {new_text:>5}  "
+                f"{old_hex:>8}  {new_hex:>8}{owner_text}"
+            )
+        if len(selected) > 200:
+            print(
+                f"  ... and {len(selected) - 200} more differences "
+                "(use --json-out or --csv-out for all)"
+            )
+
+    for label, path in (('JSON', json_out), ('CSV', csv_out)):
+        if path:
+            print(f"{label} report: {path}")
 
     return 0
 
@@ -1720,6 +1850,14 @@ Examples:
     p_diff.add_argument('--bin-a', required=True, help='First BIN file')
     p_diff.add_argument('--bin-b', required=True, help='Second BIN file')
     p_diff.add_argument('--xdf', help='Optional TunerPro XDF used to name changed tables, scalars, flags, and patches')
+    p_diff.add_argument('--xdf-only', action='store_true', help='Include only bytes owned by a parsed XDF item')
+    p_diff.add_argument('--json-out', help='Write every selected changed byte and SHA-256 provenance as JSON')
+    p_diff.add_argument('--csv-out', help='Write every selected changed byte as CSV')
+    p_diff.add_argument(
+        '--allow-size-mismatch',
+        action='store_true',
+        help='Compare trailing bytes when BIN sizes differ; disabled by default',
+    )
     p_diff.set_defaults(func=cmd_diff)
 
     # ─── strict raw patch manifests ──────────────────────────────────────

@@ -529,3 +529,14 @@ The editor's MIT license does not relicense that dependency. Review its
 before redistribution or commercial use.
 
 Copyright (c) 2025-2026 KingAI Pty Ltd — Jason King
+
+## Local diff/report integration, 2026-10-07
+The selectively imported diff changes add optional JSON/CSV reports, source hashes,
+XDF-only filtering, explicit unequal-size reporting and masked-bit-aware flag ownership.
+Existing focused editor tests passed: 92, against the declared exporter dependency
+f81e0cd6b522b8142e7424774ec068c9bb711792, not an uncommitted local replacement.
+The dependency pin is unchanged. Unsupported conversion/edit forms retain existing holds.
+Additional local report tests passed 5 cases but one new assertion incorrectly assumed
+lowercase SHA256 strings. That supplemental test file is not included in this integration;
+the uppercase report value is correct. It remains local pending assertion correction.
+No source BIN, tuning dump, hardware output or private local configuration is included.
