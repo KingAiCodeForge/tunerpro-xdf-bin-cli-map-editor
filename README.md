@@ -540,3 +540,10 @@ Additional local report tests passed 5 cases but one new assertion incorrectly a
 lowercase SHA256 strings. That supplemental test file is not included in this integration;
 the uppercase report value is correct. It remains local pending assertion correction.
 No source BIN, tuning dump, hardware output or private local configuration is included.
+
+## Supplemental report regression closure: 2026-10-08
+
+Six supplemental cases cover machine-readable diff hashes/CSV, opt-in unequal-size tails, refusal to overwrite report targets or inputs, duplicate output paths, and masked flag ownership. SHA256 assertions compare parsed fields case-insensitively; the report's uppercase hash format is unchanged. These are generated tiny fixtures, not ECU identity or flash-readiness evidence. The prior hash-test hold is superseded after the focused suite passes.
+
+The declared exporter pin is unchanged. The focused editor suite is also exercised against the revised exporter separately to detect integration regressions; that does not silently update the dependency pin.
+`Validation receipt (2026-10-08): 98 focused tests passed against the declared published dependency and 98 passed against revised exporter source. Dependency pin unchanged.`
