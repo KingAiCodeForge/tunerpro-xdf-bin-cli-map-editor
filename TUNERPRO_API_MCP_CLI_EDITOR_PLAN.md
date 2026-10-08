@@ -1,6 +1,6 @@
 # TunerPro API, MCP, and CLI Editor Plan
 
-Status: proposal
+Status: Phase 1 in progress
 
 This project should be positioned as a local automation layer around XDF/BIN
 workflows, not as a TunerPro replacement. TunerPro remains the reference GUI
@@ -25,7 +25,7 @@ auditable operations that agents and scripts can call safely.
    - expected table/scalar/flag counts
    - known tables and axis sanity checks
    - expected warnings
-2. Add `validate-fixture` and `export-fixture` commands.
+2. `validate-fixture` and `export-fixture` are now implemented on `chatgpt/exact-pair-fixture-validation-20261006`: exact BIN size/hash + XDF hash are checked before normal preflight, and snapshot export is blocked unless that gate passes.
 3. Add fixtures for:
    - BMW MS42/MS43/MS45 known-good pairs
    - Holden VY/VX/V6 Enhanced `v2.09` pairs
@@ -33,9 +33,7 @@ auditable operations that agents and scripts can call safely.
 4. Save outputs under an ignored local folder, then compare summarized results
    in public-safe reports.
 
-Commit point: commit after fixture manifests and commands work with public-safe
-sample fixtures or synthetic fixtures. Do not commit private bins, private XDFs,
-or local absolute paths.
+Current commit point: both fixture commands have synthetic fail-closed tests; the private OSID pipeline can generate hash-only portable manifests without embedding firmware. Add public-safe/synthetic committed fixture samples and run the full test suite before calling Phase 1 complete. Do not commit private bins, private XDFs, or local absolute paths.
 
 ## Phase 2 - Stable Python API
 
