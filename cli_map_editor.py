@@ -60,7 +60,7 @@ if sys.platform == 'win32':
 # Import the shared exporter engine
 from tunerpro_exporter_for_cli_editor_version import UniversalXDFExporter
 from tunerpro_xdf.xdf_addressing import table_layout
-from tunerpro_xdf.xdf_equations import EquationError, inverse_affine
+from tunerpro_xdf.xdf_equations import EquationError, inverse_affine, inverse_reciprocal
 from tunerpro_xdf.xdf_values import read_integer, write_integer
 from raw_patch_checksum_profiles import TRUSTED_CHECKSUM_VERIFIERS
 from raw_patch_manifest import (
@@ -69,7 +69,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,17 +250,26 @@ class XDFBinSession:
 
     def _inverse_math(self, equation: str, real_value: float,
                       linked_vars: Optional[Dict[str, float]] = None) -> Optional[int]:
-        """Invert only equations proved affine by their parsed structure."""
+        """Invert only equation classes proved by the shared parser.
+
+        Affine a*X+b remains the primary path. A narrowly proven reciprocal
+        K/X form is the only supported nonlinear fallback. No sampling or
+        generic numerical inverse is attempted.
+        """
         if any(name.lower() == 'x' for name in (linked_vars or {})):
             return None
         linked_names = {name.upper() for name in (linked_vars or {})}
         equation = re.sub(r'\bX\d+\b',
             lambda match: match.group() if match.group().upper() in linked_names else 'X',
             equation or '', flags=re.IGNORECASE)
+        variables = linked_vars or {}
         try:
-            return inverse_affine(equation or "", real_value, linked_vars or {})
+            return inverse_affine(equation or "", real_value, variables)
         except EquationError:
-            return None
+            try:
+                return inverse_reciprocal(equation or "", real_value, variables)
+            except EquationError:
+                return None
 
     def _raw_bounds(self, size_bits: int, signed: bool) -> Tuple[int, int]:
         """Get (min_raw, max_raw) for a given bit size and signedness."""
