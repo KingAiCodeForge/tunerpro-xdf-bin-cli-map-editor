@@ -1,10 +1,10 @@
 # KingAI CLI Map Editor — AI Agent Instructions
 
-## Current safety contract (v1.1.0, 24 September 2026)
+## Current safety contract (v1.2.0 review, 14 October 2026)
 
 This section overrides the historical design context below. Install with
 `python -m pip install .`; pyproject.toml pins the separately licensed shared
-exporter 3.7.2 to an exact public commit. The compatibility wrapper is not a
+exporter 3.7.4 review engine to an exact public commit. The compatibility wrapper is not a
 copied parser. Review the exporter's source-available license as well as this
 editor's MIT license.
 
@@ -46,7 +46,7 @@ Flashing to an ECU requires separate hardware and software (MS4x Flasher, EFILiv
 cli_map_editor.py         ← CLI entry point (argparse commands)
   └─ XDFBinSession        ← Session wrapper: load, read, write, save
       └─ UniversalXDFExporter  ← XDF parser + address resolver
-tunerpro_exporter_for_cli_editor_version.py  ← Import wrapper for pinned exporter 3.7.2
+tunerpro_exporter_for_cli_editor_version.py  ← Import wrapper for pinned exporter 3.7.4 review engine
 porting_templates.py      ← Map classification for cross-ECU porting
 mappings/                 ← CSV reference data for cross-platform porting
 ```
@@ -120,7 +120,7 @@ Every write operation produces:
 1. **No checksum correction** — saved BINs need checksums fixed before flashing
    (use MS4x Flasher, EFILive FlashScan, or equivalent)
 2. **No real-time flash/read** — this is a file editor
-3. **Inverse math accepts affine equations only**; other conversions fail closed
+3. **Inverse math accepts proven affine equations and the narrow reciprocal K/X class only**; other conversions fail closed
 4. **Temp sessions are disabled**; require `--autosave` for one-shot edits
 
 ## Supported Platforms (Tested)
