@@ -11,6 +11,24 @@ The editor reads TunerPro XDF definitions against a supplied BIN, lets a human o
 
 This README describes the **code currently on the public `main` branch**, not unmerged experimental branches or private integration packages. Historical documentation and examples are preserved in [the previous README revision](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md); its disabled-command examples are not current instructions.
 
+## Who operates this tool?
+
+**The conversation is the human interface; the command line is the AI agent's interface.** The intended user can describe a calibration inspection or a precisely specified edit in ordinary language. A terminal-capable agent such as **Codex** or **Claude Code** reads the tool's help, inspects the provided XDF/BIN, executes supported Python commands and returns the measured result, diff and audit evidence. A human can use the same commands manually, but this project is designed primarily as a **machine-operable calibration engine**, not another table-editing GUI.
+
+The agent is an **operator of deterministic software**, not an oracle for ECU control semantics. A correct byte write to the *wrong* map is still a wrong tune. The actual firmware strategy, selector, calibration purpose, vehicle setup, protections and measured effects require independent evidence. The person retains final authority over any modification.
+
+**How it differs from conventional editors:** TunerPro already supports rich XDF math, smoothing, interpolation, graphing and (with compatible hardware) RT logging. Commercial tools often provide integrated vehicle definitions, logging and flashing. KingAI's proposed value is a **source-inspectable, text/JSON/CSV-friendly, headless interface for coding agents**, with explicit failures and byte-level receipts. It is not currently a replacement for TunerPro's full parser, native interpolation, vehicle support or flashing.
+
+| A person asks the agent | Supported action on this public release | Important restriction |
+| --- | --- | --- |
+| “What's in this calibration?” | Inspect XDF/BIN, preflight, list/show/export supported items | A definition title or plausible value is not proof of the active control |
+| “What changed between stock and modified?” | Compare BIN bytes and optionally attribute changes through the XDF | Keep unattributed bytes in the review |
+| “Change this **verified** scalar/cell to the value I approve” | Execute a supported bounded integer edit on a copy, then re-read/diff | Must have exact input identity, valid math/storage and human approval |
+| “Apply this **exact** supplied raw-byte patch” | Verify hash-bound v2 manifest and, if approved, apply to a new file | Static verification does not prove code execution or flash readiness |
+| “Make a bouncing limiter / decel tune” | **Investigate first**: locate candidate controls, request hardware/log evidence, report what's proved | No automatic tune recipe, unproven limiter patch or claim of engine safety |
+
+**Execution requirement:** the AI must actually have filesystem and terminal access, a working Python environment and the pinned Exporter dependency. Attaching the source ZIP to an ordinary chat **does not necessarily allow it to run**. No built-in LLM, GPU or MCP server is required to operate the present CLI; an MCP server is a future *adapter* rather than a prerequisite. This is a **Python source-distributed Editor with an MIT licence**, but the dependency chain is not uniformly MIT; see [Licensing](#licensing).
+
 ## Install
 
 Requirements: Python **3.10+**, Git and access to the pinned dependency.
@@ -111,6 +129,32 @@ This code has been exercised in research involving BMW Siemens MS42/MS43/MS45 an
 Use the Exporter and Editor as the **review loop**: disassemble or trace candidate code consumers; record source hashes and confidence; create/update a review XDF; inspect parsed tables against the correct BIN; diff with known baselines; then compare against native TunerPro and, separately, validated hardware results. Zero or uniform results do not independently establish an error, and matching names are not evidence of a correct cross-OSID port.
 
 Historical MS42/MS43/VY table counts and the old “410 common name matches” example are archived in the [previous README](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md). **Name matches are not directly portable maps**, and historic `batch`/`port` test notes do not override the disabled release boundary.
+
+## Example instructions to give an AI coding agent
+
+These are **human requests**, not extra CLI commands. The agent must inspect `--help` and source and only invoke commands actually supported by the package provided.
+
+> “Open this matching XDF and BIN. Run preflight, list all relevant tables, and show me their raw values, units, axes and conversion equations. Keep the originals untouched. Mark uncertain definitions and active selectors as unverified.”
+
+> “Compare these stock and modified BINs. Report every changed byte, which XDF item claims each range, and any unattributed differences. Check for changed protections. Do not write a file.”
+
+> “For the **already verified** table and selected cells, show me the before/after engineering values and exact raw bytes for the value I have approved. Use the guarded Editor to create a new BIN, re-open it and prove no unrelated bytes changed. Report checksum status separately; do not flash.”
+
+> “Check this supplied exact-hash patch manifest against the original image. If the identity, old bytes, immutable regions or registered verifier disagree, stop. If all checks pass, explain the remaining firmware and hardware validation gaps before any application.”
+
+For requests like **“make pops and bangs”** or **“make the limiter bounce”**, there is no generic safe recipe in this software. The AI should first identify the exact code path, requested behaviour, protection interactions and available measurement evidence. If semantics or target pairing are unproven, stop at a research report or simulation. Do not bypass an unsupported write operation with an ad-hoc Python hex edit.
+
+### Reproducible demonstration to prove the tool works
+
+Use a small synthetic XDF/BIN fixture (not a customer ECU image) containing a named, single-variable affine scalar. A coding agent should:
+
+1. Run `--help`, `preflight`, `list-maps` and `show-scalar` on the exact fixture.
+2. Record full input SHA-256 digests and the scalar's file byte range, raw value, decoded value and equation.
+3. Ask for an explicit fixture-only target value, then use `edit-scalar --autosave --output-dir` to write **a new BIN**.
+4. Run `show-scalar` against the new BIN and `diff` against the original. Check the actual output file name and full-image byte delta; verify the input hashes did not change.
+5. Deliberately try a wrong file, unsupported expression or duplicate title; confirm the operation **fails closed** and produces no trusted output.
+
+This is a **suggested acceptance scenario**, not a claim that the demonstration has been executed against the new documentation branch. A passing synthetic demo proves the tooling path, **not** engine tuning quality.
 
 ## Using with Claude, Codex, or other AI agents
 
