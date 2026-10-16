@@ -4,13 +4,18 @@
 **Author:** Jason King (KingAiCodeForge)  
 **Copyright:** (c) 2025 KingAI Pty Ltd
 
+**Using Claude Code or Codex?** Start with [AGENTS.md](AGENTS.md) for the read-only-first workflow, exact CLI commands, refusal rules and review report. Terminal execution and a matching XDF/BIN pair are required; the source ZIP by itself cannot tune a car.
+
 ---
 
-## Current release boundary — 24 September 2026
+## CLI 1.1.0 release boundary and dependency review
 
 This is an offline file editor, not a flasher or a vehicle-safety certification.
-The packaged editor depends on Universal Exporter **3.7.2**, pinned to reviewed
-commit `f81e0cd6b522b8142e7424774ec068c9bb711792`. No sibling checkout is needed.
+This branch proposes Universal Exporter **3.7.3** at the MIT-licensed commit
+`85a02600a288c1861cda8e772bdd6e7a081be955`. No sibling checkout is needed.
+**Before merging or describing this as a tested release, run the installed-package,
+unit, Windows/Linux and exact-definition regression checks.** The historical
+validation receipts below relate to older dependency revisions.
 Python 3.10+ and Git are required to install the pinned dependency:
 
 ```console
@@ -101,67 +106,54 @@ This tool is also useful while building or repairing XDFs during reverse enginee
 
 That makes it a fast feedback tool for XDF development: disassembly finds likely addresses and code-use, while the exporter shows whether the candidate XDF renders consistently as editable calibration data. Final truth still comes from comparing against TunerPro, known-good bins, and platform-specific test fixtures.
 
-Built specifically for AI agent workflows — Copilot, Claude, ChatGPT, or any LLM that can run shell commands. The agent reads maps, edits cells, ports calibrations between firmware versions, and reviews diffs, all through structured CLI output that's easy to parse programmatically.
+Built for AI agent workflows with terminal access. On supported XDF/BIN pairs an agent can inspect maps, run preflight, export values, review bounded changes and compare BINs. The `port` and `batch` commands are disabled in this release.
 
 ### Why This Exists
 
-Every ECU tuning tool available today is GUI-based. None expose a CLI or API that an AI agent can call:
+Many ECU tuning tools already have their own scripting, programming,
+diagnostic or file interfaces. This project's specific contribution is an
+auditable, offline command-line workflow using TunerPro XDF definitions and
+matching raw BIN files. Its scope and compatibility are narrower than the
+broader ecosystem of ECU calibration, flashing and logging applications.
 
-| Tool | Cost | Limitation |
-|------|------|-----------|
-| **WinOLS** | ~$600+ license | Proprietary, Windows GUI only, no CLI/API |
-| **ECM Titanium** | ~$400+ | GUI with driver database, no scripting |
-| **HP Tuners** | $300-900+ hardware | Vendor-locked to GM/Ford/Chrysler, GUI only |
-| **EFILive** | $600-1000+ hardware | GUI only, annual subscriptions |
-| **Swiftec** | Subscription | Dashboard GUI, no programmatic access |
-| **BitEdit** | Subscription | Binary editor, no XDF support |
-| **TunerPro** | Free | Full XDF+BIN GUI, but no CLI, no API, no scripting |
-| **RomRaider** | Free/OSS | Subaru-only, Java GUI, mostly inactive |
-
-The few open-source alternatives are read-only or incomplete:
-
-| Tool | What It Does | What It Can't Do |
-|------|-------------|-----------------|
-| **Atlas** (MOTTechnologies) | Open-source calibration app | A2L-focused, not XDF, early development |
-| **ecushark/serpentine** | Web-based XDF viewer | Read-only, no BIN editing, no write-back |
-| **xdfbinext** (jtownson) | XDF+BIN diff reports, MHD logging | Read-only comparison, no editing |
-| **OpenECU Calibrator** | CAN-based real-time calibration | Requires specific hardware, not XDF-based |
-
-This project targets a narrower gap: local, scriptable calibration workflow. The goal is to read a map from a BIN, change selected cells, write a timestamped BIN, produce an auditable edit log, and compare or port calibration data from a command line that an AI agent can operate.
+It complements, rather than replaces, software used for ECU acquisition,
+checksum repair, flashing, logger integration and professional calibration
+validation. Commercial tuning workshops may use the MIT-licensed source,
+subject to the terms of any third-party code and data they use.
 
 ### What About "ChatGPT Tuning"?
 
-There are ChatGPT tuning experiments across YouTube, Reddit, HP Tuners forums, and Holley forums. Some are custom GPT chatbots ("Car ECU Tuning" GPT, Gen4 V8 E38 tuning bots). Some are people pasting datalogs into ChatGPT and asking for calibration advice. They all share the same fundamental limitation: **the AI has no access to the actual BIN data**.
+An AI assistant without access to the exact BIN, matching definition and an
+execution environment cannot directly inspect or verify calibration bytes.
+A terminal-enabled agent can run file-aware tools when those inputs are made
+available, whether locally or in an authorised remote environment.
 
-These are just ChatGPT with some system instructions and maybe a knowledge base file uploaded. The accuracy is entirely dependent on the LLM's general knowledge, which is unreliable for safety-critical calibration values. The chatbot can discuss tuning concepts in general terms — what a MAF transfer function does, why ignition timing matters — but it can't read what's actually in your ECU right now. It can't verify values against the binary. It can't write changes back. And when it gives bad advice — and forum users have reported duty cycle pressures, boost targets, and ignition timing suggestions that would damage engines — there's no validation layer to catch the error before it reaches the ECU. It's conversation, not tooling.
+Access to a file alone does not establish valid map semantics or a safe tune.
+The definition may be incorrect, a map may be unverified, and a technically
+successful edit may still require checksum correction, legal review and real
+engine testing. Treat LLM interpretation as a proposal and the CLI report
+as file-level evidence, not a substitute for professional calibration.
 
-### What About ChatGPT Agent Mode or Cloud AI Platforms?
+Use a local execution environment when customer data must remain on site.
+If a remote assistant is used, confirm the data owner permits those uploads.
 
-ChatGPT in agent mode can execute code. It has sandboxed Ubuntu servers. In theory it could run Python scripts against BIN files. In practice, ECU calibration is a terrible fit for cloud AI:
+### The Right Architecture: Agent + Deterministic CLI
 
-- **No persistent local context.** Cloud agents spin up disposable environments. They don't have your BIN collection, your XDF library, your datalogs, or any history of what you've already tuned. Every session starts cold. You'd need to upload everything, every time.
-- **Error-prone on domain-specific work.** Even with code execution, the LLM still has to write correct XDF parsing logic, handle BASEOFFSET addressing, resolve embedinfo axis links, and get byte-order right. These are hard problems with subtle edge cases. Cloud agents will get things wrong in ways that corrupt calibration data silently.
-- **No safety validation.** A cloud agent can't run preflight checks against your specific XDF+BIN pairing, can't verify that a fuel map edit didn't overflow into an adjacent ignition table, and can't cross-reference against your known-good baseline BIN. It's guessing.
-- **Same applies to Manus.im and similar orchestration platforms.** They can chain multi-step workflows, but they don't have the domain-specific tooling for ECU work. The XDF format, TunerPro math equations, linked axes, BASEOFFSET modes — none of this exists in their tool libraries.
-- **Privacy.** Proprietary calibration data, custom XDFs, and tuning strategies shouldn't be uploaded to third-party cloud servers.
+The tool can be operated by a human or by any coding agent with an authorised
+terminal, Python environment and access to the files. The CLI itself needs no
+LLM API key. See [AGENTS.md](AGENTS.md) for specific steps and guardrails.
 
-ECU calibration is a safety-critical domain. A cloud AI estimating spark advance values without reading the actual binary is dangerous. The model needs deterministic tools with guaranteed correct address resolution, proper byte-order handling, and logged before/after values — not probabilistic text generation hoping it got the offset right.
+1. Run `preflight` against the exact XDF and raw BIN and inspect all errors.
+2. Run `list-maps` and `show-map` or `show-scalar` to read actual values.
+3. Independently verify the chosen object's address, axes, conversion and meaning.
+4. If the user approves a specific supported edit, write a separate BIN with
+   `--autosave --output-dir`; never modify the original file.
+5. Reload and compare the result using `diff`, audit the output logs, and report
+   hashes, changed offsets and unresolved checks to the human reviewer.
 
-### The Right Architecture: Local Agent + Deterministic CLI
-
-The practical approach is a local AI agent with direct terminal access to this CLI tool. That means VS Code with Copilot or Claude, a local LLM via Ollama or llama.cpp, or any agent framework that can run shell commands. No API keys required for the tool itself — bring whatever model you want.
-
-The workflow:
-
-1. **Agent reads the maps** — `show-map` returns real values extracted from the BIN using the XDF's math equations, not hallucinated guesses from training data
-2. **Agent builds a plan** — based on the actual current calibration state, with full awareness of what every table contains right now
-3. **Agent writes changes** — `edit` or `batch` with deterministic inverse math, logging old and new values (both raw bytes and real-world units)
-4. **Agent validates** — `preflight` catches address errors and overlaps, `diff` proves exactly which bytes changed and nothing else
-5. **Human reviews** — edit logs are TunerPro-compatible CSV, fully inspectable before anything gets flashed
-
-A model with a high context window and well-defined instructions can hold the full map state, the edit plan, and the validation results simultaneously. It generates a report of every change and why — creating an auditable trail that a human tuner reviews before flashing. This is how AI-assisted tuning should work: the AI handles the tedious cross-referencing and calculation, the human makes the final call.
-
-Live tuning — an agent correcting values in real-time while driving based on datalog feedback — is technically possible with this architecture, but requires a validated calibration plan and robust safety bounds. Human-in-the-loop is essential until models are trained on real-world sensor data and understand cause-and-effect relationships in combustion, not just statistical patterns from text. The model needs to know what's up and what's down, what positive and negative mean for each parameter, and what happens when you change one value on everything else in the system.
+Unsupported layouts and operations must be refused. `batch`, `port` and
+standalone `save` are intentionally disabled. No CLI result certifies that a
+calibration is mechanically safe or ready to flash.
 
 ### Who Is This For?
 
@@ -472,22 +464,21 @@ Detection heuristics (checks Z-axis output, not axis labels):
 
 ## Agent Prompt Template
 
-When using this tool from an AI agent (Copilot, Claude, etc.), use this session instruction:
+Give Claude Code, Codex or another coding agent this instruction, together
+with an authorised, matching BIN/XDF pair and an executable local workspace:
 
+```text
+Read AGENTS.md and the current release boundary in README.md first.
+Default to read-only analysis. Hash the original files.
+Run preflight, list-maps and show-map/show-scalar for the exact object.
+Show original values, units, axes, addresses, validation errors and unknowns.
+Do not guess ECU map locations or tuning targets.
+Do not call batch, port or standalone save; those paths are disabled.
+Do not modify any file until I approve a named object and numeric value.
+For a supported approved edit, use autosave to a new output directory.
+Reload, diff, report changed offsets and hashes, and retain logs.
+Never claim that checksum handling, flashing or engine safety is certified.
 ```
-Context: Repo has cli_map_editor.py in tunerpro-xdf-bin-cli-map-editor/.
-XDF and BIN files are provided by the user.
-Always run these commands in order:
-1. preflight — validate XDF+BIN
-2. list-maps — understand available maps
-3. show-map — verify target table before editing
-4. edit/batch/port — make changes
-5. Review the log file after save
-Never flash a BIN without checksum verification.
-All outputs are timestamped and logged.
-```
-
----
 
 ## Technical Details
 
@@ -520,13 +511,14 @@ The exporter resolves these automatically via uniqueid index.
 
 ## License
 
-Editor code: MIT License — see [LICENSE](LICENSE).
+The editor and the proposed pinned Universal Exporter revision are both
+licensed under the **MIT License**, including commercial use. See
+[Editor LICENSE](LICENSE) and the
+[Exporter licence at the proposed pin](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter/blob/85a02600a288c1861cda8e772bdd6e7a081be955/LICENSE).
 
-The required Universal Exporter dependency has a separate **KingAI Custom
-Source-Available License**, including a commercial-permission requirement.
-The editor's MIT license does not relicense that dependency. Review its
-[license at the pinned commit](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter/blob/f81e0cd6b522b8142e7424774ec068c9bb711792/LICENSE)
-before redistribution or commercial use.
+This branch has not yet established installed-package or real-definition
+parity for the updated dependency. Do not merge the pin change without
+regression checks and inspection of third-party code and data licences.
 
 Copyright (c) 2025-2026 KingAI Pty Ltd — Jason King
 
