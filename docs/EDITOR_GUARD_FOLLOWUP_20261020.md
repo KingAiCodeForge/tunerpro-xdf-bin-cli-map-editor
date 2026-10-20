@@ -1,5 +1,16 @@
 # Editor Guard Follow-Up - 20 October 2026
 
+## RC2 Continuation
+
+The guarded source is now versioned **1.2.0rc2**, keeping the original RC1
+assets and this earlier follow-up receipt identifiable. Independent review
+reproduced three defects against the published unguarded RC1; the three-way
+merge retained the current documentation regressions and passed **268 tests,
+17 skips** on Windows Python 3.13. The RC2 source, installed packages and
+portable bundle are requalified separately, with final artifact receipts
+attached to its release. Counts and hashes below identify the earlier
+follow-up candidate, not the RC2 package.
+
 This continues preserved integration candidate
 `383befae5d77bcd354c4bef880cda4692600c8cd`, not a rebuild from an older
 checkout. The dependency remains exact Exporter source

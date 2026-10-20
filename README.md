@@ -2,7 +2,7 @@
 
 **Offline XDF/BIN inspection, bounded calibration edits and reproducible byte-level review.**
 
-- **Version:** **1.2.0rc1**, an experimental integration prerelease.
+- **Version:** **1.2.0rc2**, an experimental guarded-write prerelease.
 - **Documentation review:** 20 October 2026.
 - **Author:** KingAI Pty Ltd / KingAiCodeForge.
 - **Status:** Research and engineering tooling. **Not a flasher, autonomous tuner or vehicle-safety approval.**
@@ -40,7 +40,14 @@ python -m pip install .
 kingai-map-editor --help
 ```
 
-The package is `kingai-tunerpro-map-editor==1.2.0rc1`. Its `pyproject.toml` pins the **Universal Exporter 3.7.5rc1** source to exact tested commit `e7c0ae86534791620ea0b843810f4980d24081d5`. `tunerpro_exporter_for_cli_editor_version.py` is a compatibility entry point importing that installed package, **not a second bundled/cloned parser**. No sibling Exporter checkout is required for the installed CLI.
+The package is `kingai-tunerpro-map-editor==1.2.0rc2`. Its `pyproject.toml` pins the **Universal Exporter 3.7.5rc1** source to exact tested commit `e7c0ae86534791620ea0b843810f4980d24081d5`. `tunerpro_exporter_for_cli_editor_version.py` is a compatibility entry point importing that installed package, **not a second bundled/cloned parser**. No sibling Exporter checkout is required for the installed CLI.
+
+RC2 supersedes RC1 for editing. RC1 accepted a range whose later cell changed
+an earlier cell's conversion dependency, and could accept a numerically inferior
+inverse result. [The guard follow-up](docs/EDITOR_GUARD_FOLLOWUP_20261020.md)
+records the reproductions and fixes. RC1 downloads remain preserved with a
+warning; they were not silently replaced. Native parity and real-definition
+qualification are still separate requirements.
 
 The commands below use the installed `kingai-map-editor` entry point. `python cli_map_editor.py` also works from a correctly installed source checkout. Use a matching, lawfully obtained XDF and BIN; neither is supplied in this repository.
 
