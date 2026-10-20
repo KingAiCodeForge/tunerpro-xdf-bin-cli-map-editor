@@ -73,11 +73,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-<<<<<<< HEAD
-__version__ = "1.1.1"
-=======
 __version__ = "1.2.0"
->>>>>>> origin/chatgpt/reciprocal-inverse-cli-v120-20261014
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════
