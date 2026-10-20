@@ -1,5 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  PORTING TEMPLATES — Map Classification for AI-Assisted Tune Porting
+#  ARCHIVAL PORTING DESIGN NOTES - CLI port command is disabled.
+#  Historical SAFE/verified language is not a compatibility or tuning claim.
+#  No cross-ECU transformation in this file is executable or qualified.
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 #  These templates tell the AI CLI editor how to classify maps when porting

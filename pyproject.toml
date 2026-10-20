@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kingai-tunerpro-map-editor"
-version = "1.1.0"
+version = "1.2.0rc1"
 description = "Offline XDF/BIN inspection and bounded integer edits with audit logs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,7 +12,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "Jason King"}]
 dependencies = [
-  "kingai-tunerpro-xdf @ git+https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter.git@f81e0cd6b522b8142e7424774ec068c9bb711792",
+  "kingai-tunerpro-xdf @ git+https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter.git@e7c0ae86534791620ea0b843810f4980d24081d5",
 ]
 
 [project.optional-dependencies]
@@ -22,7 +22,7 @@ test = ["pytest>=8,<10"]
 kingai-map-editor = "cli_map_editor:main"
 
 [tool.setuptools]
-py-modules = ["cli_map_editor", "tunerpro_exporter_for_cli_editor_version", "raw_patch_manifest", "raw_patch_checksum_profiles", "porting_templates"]
+py-modules = ["cli_map_editor", "tunerpro_exporter_for_cli_editor_version", "raw_patch_manifest", "raw_patch_checksum_profiles", "porting_templates", "build_portable_bundle", "portable_install"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]

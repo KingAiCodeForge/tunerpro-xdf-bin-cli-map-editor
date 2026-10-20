@@ -21,6 +21,8 @@
    export       Snapshot XDF+BIN to an output directory
    port         Disabled pending verified transformations and transactional writes
    preflight    Validate XDF+BIN compatibility before editing
+   validate-fixture  Verify exact BIN/XDF hashes, then run preflight
+   export-fixture    Verify exact pair, preflight, then create a guarded snapshot
    diff         Show byte-level diff, optionally attributed through a TunerPro XDF
    apply-raw-patch   Apply an exact-hash, reversible raw-byte patch manifest
    verify-raw-patch  Verify and stage a raw-byte patch entirely in memory
@@ -42,6 +44,7 @@ import os
 import re
 import struct
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from contextlib import ExitStack, nullcontext
@@ -60,7 +63,7 @@ if sys.platform == 'win32':
 # Import the shared exporter engine
 from tunerpro_exporter_for_cli_editor_version import UniversalXDFExporter
 from tunerpro_xdf.xdf_addressing import table_layout
-from tunerpro_xdf.xdf_equations import EquationError, inverse_affine
+from tunerpro_xdf.xdf_equations import EquationError, inverse_affine, inverse_reciprocal
 from tunerpro_xdf.xdf_values import read_integer, write_integer
 from raw_patch_checksum_profiles import TRUSTED_CHECKSUM_VERIFIERS
 from raw_patch_manifest import (
@@ -69,7 +72,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.2.0rc1"
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -107,6 +110,83 @@ def _format_raw_hex(raw: int, size_bits: int) -> str:
         # Handle signed: show two's complement
         raw = raw & ((1 << size_bits) - 1)
     return f"0x{raw:0{hex_digits}X}"
+
+
+class SaveIncompleteError(OSError):
+    """A failed coordinated save whose staging evidence has been retained."""
+
+
+def _publish_staged_file(staged: Path, destination: Path) -> None:
+    # Windows rename refuses an existing destination and also works on FAT/exFAT.
+    # POSIX rename can overwrite, so publish with an exclusive same-filesystem link.
+    if os.name == 'nt':
+        os.rename(staged, destination)
+    else:
+        os.link(staged, destination)
+
+
+def _save_audited_payloads(output_paths, payloads) -> None:
+    """Prepare all bytes before publication; retain clearly labelled failures.
+
+    This is not a crash-proof multi-file filesystem transaction. Audit files are
+    published before the BIN, and ordinary partial payloads are never published.
+    """
+    root = output_paths[0].parent
+    staging = Path(tempfile.mkdtemp(prefix='.kingai-save-', suffix='.incomplete', dir=root))
+    stages = [staging / path.name for path in output_paths]
+    manifest = staging / 'save-state.json'
+    published = []
+    try:
+        with open(manifest, 'x', encoding='utf-8') as handle:
+            json.dump({'status': 'INCOMPLETE', 'planned_outputs': [p.name for p in output_paths]}, handle)
+        for index in (1, 2, 0):
+            with open(stages[index], 'xb') as handle:
+                written = handle.write(payloads[index])
+                if written != len(payloads[index]):
+                    raise OSError(f'Short write for {output_paths[index].name}')
+                handle.flush()
+                os.fsync(handle.fileno())
+        for index in (1, 2, 0):
+            staged = stages[index]
+            identity = staged.stat()
+            _publish_staged_file(staged, output_paths[index])
+            published.append((output_paths[index], staged, identity.st_dev, identity.st_ino))
+    except BaseException as exc:
+        rollback_errors = []
+        for destination, staged, device, inode in reversed(published):
+            try:
+                if destination.is_symlink():
+                    raise OSError('Destination was replaced by a symlink')
+                if staged.exists() and os.path.samefile(destination, staged):
+                    destination.unlink()
+                else:
+                    current = destination.stat()
+                    if not inode or (current.st_dev, current.st_ino) != (device, inode):
+                        raise OSError('Cannot establish ownership of published output')
+                    # Windows moved this newly created file out of staging.
+                    # Move only that same file back; never overwrite another path.
+                    if os.name != 'nt' or os.path.lexists(staged):
+                        raise OSError('Cannot restore staged output without replacing a path')
+                    os.rename(destination, staged)
+            except OSError as rollback_error:
+                rollback_errors.append(f'{destination}: {rollback_error}')
+        if not isinstance(exc, Exception):
+            raise
+        details = '; '.join(rollback_errors)
+        raise SaveIncompleteError(
+            f'INCOMPLETE save; staging retained at {staging}. '
+            f'No successful BIN save was reported. {exc}'
+            + (f' Published outputs requiring inspection: {details}' if details else '')
+        ) from exc
+    # Cleanup concerns only files created by this save, never source/user files.
+    try:
+        for staged in stages:
+            if staged.exists():
+                staged.unlink()
+        manifest.unlink()
+        staging.rmdir()
+    except OSError as exc:
+        print(f'WARNING: All outputs were published, but staging cleanup failed: {staging}: {exc}', file=sys.stderr)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -208,7 +288,7 @@ class XDFBinSession:
         """Read the containing byte and selected flag state."""
         address = flag['address']
         mask = flag.get('mask', 0x01)
-        if not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
+        if isinstance(mask, bool) or not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
             raise ValueError(f"Flag '{flag['title']}' has invalid mask {mask!r}")
         file_offset = self.exporter._xdf_addr_to_file_offset(address)
         raw = self._read_raw_at(file_offset, 8)
@@ -250,17 +330,26 @@ class XDFBinSession:
 
     def _inverse_math(self, equation: str, real_value: float,
                       linked_vars: Optional[Dict[str, float]] = None) -> Optional[int]:
-        """Invert only equations proved affine by their parsed structure."""
+        """Invert only equation classes proved by the shared parser.
+
+        Affine a*X+b remains the primary path. A narrowly proven reciprocal
+        K/X form is the only supported nonlinear fallback. No sampling or
+        generic numerical inverse is attempted.
+        """
         if any(name.lower() == 'x' for name in (linked_vars or {})):
             return None
         linked_names = {name.upper() for name in (linked_vars or {})}
         equation = re.sub(r'\bX\d+\b',
             lambda match: match.group() if match.group().upper() in linked_names else 'X',
             equation or '', flags=re.IGNORECASE)
+        variables = linked_vars or {}
         try:
-            return inverse_affine(equation or "", real_value, linked_vars or {})
+            return inverse_affine(equation or "", real_value, variables)
         except EquationError:
-            return None
+            try:
+                return inverse_reciprocal(equation or "", real_value, variables)
+            except EquationError:
+                return None
 
     def _raw_bounds(self, size_bits: int, signed: bool) -> Tuple[int, int]:
         """Get (min_raw, max_raw) for a given bit size and signedness."""
@@ -552,6 +641,9 @@ class XDFBinSession:
         log_out = os.path.join(output_dir, log_name)
         detail_out = os.path.join(output_dir, detail_name)
         output_paths = [Path(path) for path in (bin_out, log_out, detail_out)]
+        output_root = Path(output_dir).resolve()
+        if any(path.parent.resolve() != output_root for path in output_paths):
+            raise ValueError('Every save output must stay in the requested output directory')
         protected = {Path(self.bin_path).resolve(), Path(self.xdf_path).resolve()}
         resolved = [path.resolve() for path in output_paths]
         if len(set(resolved)) != len(resolved) or any(path in protected for path in resolved):
@@ -568,13 +660,7 @@ class XDFBinSession:
         payloads = [bytes(self.bin_data), log_buffer.getvalue().encode('utf-8'),
                     detail_buffer.getvalue().encode('utf-8')]
         os.makedirs(output_dir, exist_ok=True)
-        # Exclusive creation also protects against collisions after preflight.
-        # Reserve all paths before writing bytes; preserve reservations on an
-        # I/O error rather than deleting any files. The caller reports failure.
-        with ExitStack() as stack:
-            handles = [stack.enter_context(open(path, 'xb')) for path in output_paths]
-            for index in (1, 2, 0):
-                handles[index].write(payloads[index])
+        _save_audited_payloads(output_paths, payloads)
         return bin_out, log_out
 
     def add_table_log_entry(self, table_title: str):
@@ -1191,6 +1277,129 @@ def cmd_port(args):
     return 1
 
 
+
+def _sha256_file(path: str | Path) -> str:
+    """Return lowercase SHA-256 for an exact on-disk artifact."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _load_exact_pair_fixture(path: str | Path, target_id: str) -> Dict[str, Any]:
+    """Load one strict KingAI exact-pair fixture by target id.
+
+    Supported inputs:
+      - kingai.exact-pair-fixture-set.v1
+      - kingai.exact-bin-xdf-fixture.v1
+
+    The fixture is identity/preflight evidence only. It never authorises writes.
+    """
+    with open(path, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+
+    if not isinstance(obj, dict):
+        raise ValueError('fixture root must be an object')
+    schema = obj.get('schema')
+    if schema == 'kingai.exact-pair-fixture-set.v1':
+        fixtures = obj.get('fixtures')
+        if not isinstance(fixtures, list):
+            raise ValueError('fixture set has no fixtures list')
+        matches = [x for x in fixtures if isinstance(x, dict) and x.get('target_id') == target_id]
+        if len(matches) != 1:
+            raise ValueError(
+                f"target_id {target_id!r} matched {len(matches)} fixture(s); expected exactly one"
+            )
+        fixture = matches[0]
+    elif schema == 'kingai.exact-bin-xdf-fixture.v1':
+        fixture = obj
+        if fixture.get('target_id') != target_id:
+            raise ValueError(
+                f"fixture target_id {fixture.get('target_id')!r} does not match {target_id!r}"
+            )
+    else:
+        raise ValueError(f'unsupported exact-pair fixture schema: {schema!r}')
+
+    for section in ('bin', 'xdf'):
+        value = fixture.get(section)
+        if not isinstance(value, dict):
+            raise ValueError(f'fixture missing {section} object')
+        digest = str(value.get('sha256') or '').strip().lower()
+        if not re.fullmatch(r'[0-9a-f]{64}', digest):
+            raise ValueError(f'fixture {section}.sha256 must be exactly 64 hex characters')
+    size = fixture['bin'].get('size')
+    if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+        raise ValueError('fixture bin.size must be a positive integer')
+    return fixture
+
+
+def cmd_validate_fixture(args):
+    """Verify an exact BIN/XDF fixture, then run the normal read-only preflight."""
+    try:
+        fixture = _load_exact_pair_fixture(args.fixture, args.target_id)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"FAIL: Invalid exact-pair fixture: {exc}")
+        return 1
+
+    bin_path = Path(args.bin)
+    xdf_path = Path(args.xdf)
+    try:
+        bin_size = bin_path.stat().st_size
+        bin_hash = _sha256_file(bin_path)
+        xdf_hash = _sha256_file(xdf_path)
+    except OSError as exc:
+        print(f"FAIL: Cannot read exact-pair input: {exc}")
+        return 1
+
+    expected_bin = fixture['bin']
+    expected_xdf = fixture['xdf']
+    failures = []
+    if bin_size != expected_bin['size']:
+        failures.append(
+            f"BIN size mismatch: got {bin_size}, expected {expected_bin['size']}"
+        )
+    if bin_hash.lower() != str(expected_bin['sha256']).lower():
+        failures.append(
+            f"BIN SHA-256 mismatch: got {bin_hash}, expected {expected_bin['sha256']}"
+        )
+    if xdf_hash.lower() != str(expected_xdf['sha256']).lower():
+        failures.append(
+            f"XDF SHA-256 mismatch: got {xdf_hash}, expected {expected_xdf['sha256']}"
+        )
+
+    print(f"\n{'='*60}")
+    print(f"EXACT-PAIR FIXTURE: {args.target_id}")
+    print(f"{'='*60}")
+    print(f"  BIN: {bin_path.name}")
+    print(f"  BIN SHA-256: {bin_hash}")
+    print(f"  XDF: {xdf_path.name}")
+    print(f"  XDF SHA-256: {xdf_hash}")
+
+    if failures:
+        print(f"\n  FAIL ({len(failures)} identity mismatch(es)):")
+        for failure in failures:
+            print(f"    ! {failure}")
+        print("\n  Preflight was NOT run because the exact-pair identity contract failed.\n")
+        return 1
+
+    print("\n  Exact hashes and BIN size: MATCH")
+    print("  Running normal XDF+BIN preflight next.")
+    # cmd_preflight is read-only and is the existing CLI compatibility gate.
+    return cmd_preflight(args)
+
+
+
+
+def cmd_export_fixture(args):
+    """Verify exact-pair identity and preflight before using the existing snapshot exporter."""
+    if cmd_validate_fixture(args) != 0:
+        print("FAIL: Fixture export blocked because exact-pair validation/preflight failed.")
+        return 1
+    return cmd_export(args)
+
+
+
 def cmd_preflight(args):
     """Validate XDF+BIN compatibility."""
     session = XDFBinSession(args.xdf, args.bin)
@@ -1219,7 +1428,10 @@ def cmd_preflight(args):
         except (ValueError, IndexError) as exc:
             issues.append(f"Scalar '{const['title']}': {exc}")
     for flag in session.flags:
-        if session.exporter.read_value_from_bin(flag['address'], 8) is None:
+        mask = flag.get('mask', 0x01)
+        if isinstance(mask, bool) or not isinstance(mask, int) or not 0 < mask <= 0xFF:
+            issues.append(f"Flag '{flag['title']}' has invalid mask {mask!r}")
+        elif session.exporter.read_value_from_bin(flag['address'], 8) is None:
             issues.append(f"Flag '{flag['title']}' cannot be read")
 
     for t in session.tables:
@@ -1844,6 +2056,29 @@ Examples:
     p_pre.add_argument('--xdf', required=True)
     p_pre.add_argument('--bin', required=True)
     p_pre.set_defaults(func=cmd_preflight)
+
+    # ─── validate-fixture ────────────────────────────────────────────────
+    p_fixture = sp.add_parser(
+        'validate-fixture',
+        help='Verify exact BIN/XDF hashes from a KingAI fixture, then run preflight',
+    )
+    p_fixture.add_argument('--fixture', required=True, help='Exact-pair fixture JSON')
+    p_fixture.add_argument('--target-id', required=True, help='Fixture target_id to select')
+    p_fixture.add_argument('--xdf', required=True, help='Exact XDF to verify')
+    p_fixture.add_argument('--bin', required=True, help='Exact BIN to verify')
+    p_fixture.set_defaults(func=cmd_validate_fixture)
+
+    # ─── export-fixture ─────────────────────────────────────────────────
+    p_export_fixture = sp.add_parser(
+        'export-fixture',
+        help='Verify exact-pair fixture and preflight before creating a snapshot',
+    )
+    p_export_fixture.add_argument('--fixture', required=True, help='Exact-pair fixture JSON')
+    p_export_fixture.add_argument('--target-id', required=True, help='Fixture target_id to select')
+    p_export_fixture.add_argument('--xdf', required=True, help='Exact XDF to verify/export')
+    p_export_fixture.add_argument('--bin', required=True, help='Exact BIN to verify/export')
+    p_export_fixture.add_argument('--output-dir', required=True, help='Parent directory for guarded snapshot')
+    p_export_fixture.set_defaults(func=cmd_export_fixture)
 
     # ─── diff ────────────────────────────────────────────────────────────
     p_diff = sp.add_parser('diff', help='Byte-level diff, optionally attributed through a TunerPro XDF')

@@ -1,1 +1,4 @@
 include test_*.py
+include *.md *.MD
+recursive-include docs *.md
+recursive-include mappings *.csv
