@@ -37,7 +37,7 @@ positive/negative affine half-step ties and integral/fractional raw input.
 The initial red run reproduced the CLI/numerical/input-policy gaps; tests
 requiring the newly introduced range API failed until it was implemented.
 
-## Qualification
+## Initial Qualification Before PR #7 Reconciliation
 
 Runtime/test source commit:
 `c4a5119c7c721bc0c26eecb1d4df9d2bd8b44c48`. This documentation receipt is
@@ -74,8 +74,41 @@ The first artifact attempt was rejected for CRLF conversion relative to Git
 blobs, despite matching logical source. Its files were preserved separately.
 The passing artifacts came from an archive created with invocation-local
 `core.autocrlf=false` and `core.eol=lf`; no persistent Git setting was changed.
-The initial Linux ensurepip setup failure was also retained, not counted as
+The initial Linux ensurepip setup failure was recorded, not counted as
 a passing test run.
+
+## Final 1.2.0rc2 Qualification
+
+Combined runtime/test source commit:
+`76a893cd495f7f5ab98f7c672ca723139a720377`. This includes merged public main
+`6b8e2be7aa07af8b20e1f2588d12a16619112deb` and preserves all PR #7 changes.
+The final documentation receipt is committed afterward; runtime is unchanged.
+
+- Windows Python 3.13.5 source: **268 passed, 17 skipped** (34.42 s).
+- Windows fresh installed rc2 wheels, isolated/importlib tests away from
+  source: **268 passed, 17 skipped** (36.81 s).
+- Ubuntu 24.04 / WSL Python 3.12.3 fresh installed identical rc2 wheels:
+  **267 passed, 18 skipped** (14.53 s on the persisted-receipt replay).
+- All 15 runtime modules again match committed Git blobs, wheels and Windows
+  installed bytes; Linux wheel/installed equality and identical wheel hashes
+  were independently rechecked. Linux receipt was saved to the shared drive.
+- The actual rc2 offline bundle installed to a fresh Windows path with spaces
+  from an unrelated working directory; pip check and installed help passed,
+  and repeating installation refused the existing environment.
+- A fresh rc2 online install resolved the unchanged exact Exporter Git pin
+  using the previously built dependency wheel cache; pip check and help passed.
+
+| Final rc2 artifact | SHA-256 |
+| --- | --- |
+| `kingai_tunerpro_map_editor-1.2.0rc2-py3-none-any.whl` | `3ac377a1b2464729c0b4a17c464872977d67f247fab334339c884dae797746df` |
+| `kingai_tunerpro_map_editor-1.2.0rc2.tar.gz` | `c4dde9d7c7a7e0826a9437f1cf49c19612315adabe34ec4751ea282c66eb71f3` |
+| `kingai-editor-1.2.0rc2-offline.zip` | `a8ba7067478de36f0ba163b15853da39a7024e421af0ce8050bfd22cfeea66fe` |
+
+These are locally built/tested artifacts, not a claim of a new GitHub Release.
+PR #8's hosted matrix failed before running steps: GitHub reported an account
+billing lock. No billing setting or branch protection was bypassed. The same
+missing-input, ensurepip, native TunerPro, Python 3.10/macOS and physical holds
+above remain open; no existing release asset was replaced.
 
 No private definitions, customer files, original firmware, native TunerPro
 session, ECU connection, checksum repair or flashing was used. Existing
