@@ -66,6 +66,22 @@ def test_cli_in_unrelated_directory_with_spaces_preserves_inputs(tmp_path):
     }), encoding='utf-8')
     validation = run_cli(cwd, 'validate-fixture', *common, '--fixture', fixture, '--target-id', 'synthetic')
     assert validation.returncode == 0, validation.stdout + validation.stderr
+    snapshots = cwd / 'reviewed snapshot outputs'
+    exported = run_cli(cwd, 'export-fixture', *common, '--fixture', fixture,
+                       '--target-id', 'synthetic', '--output-dir', snapshots)
+    assert exported.returncode == 0, exported.stdout + exported.stderr
+    copies = list(snapshots.rglob('*.bin'))
+    assert len(copies) == 1
+    assert copies[0].read_bytes() == original
+    denied_output = cwd / 'must not export mismatch'
+    wrong_fixture = json.loads(fixture.read_text(encoding='utf-8'))
+    wrong_fixture['bin']['sha256'] = '0' * 64
+    fixture.write_text(json.dumps(wrong_fixture), encoding='utf-8')
+    refused = run_cli(cwd, 'export-fixture', *common, '--fixture', fixture,
+                      '--target-id', 'synthetic', '--output-dir', denied_output)
+    assert refused.returncode != 0
+    assert 'BIN SHA-256 mismatch' in refused.stdout
+    assert not denied_output.exists()
     assert binary.read_bytes() == original
     assert xdf.read_bytes() == xdf_bytes
 

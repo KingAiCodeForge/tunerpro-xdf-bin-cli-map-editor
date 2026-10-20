@@ -31,7 +31,26 @@ The runtime audit inspected actual source, command paths, errors and writes. The
 | `porting_templates.py` | Inspected entire comments-only historical file; added prominent archival designation because `port` is disabled and old SAFE/verified wording is not current evidence. | No executable transformation exists; excluded from enabled feature claims. Original notes preserved. |
 | `.github/workflows/editor-tests.yml` | Inspected package installation and away-from-source test steps; replaced hardcoded 1.1.0 wheel lookup with checked single-wheel selection. | Local equivalent run required below. Hosted Windows/Linux Python 3.10/3.13 results are separate evidence. |
 
-Test modules are reviewed as synthetic regression evidence, not public data qualification. Their per-module ledger is completed alongside final execution below.
+All test modules were individually inspected. They are synthetic regression evidence, not public data qualification.
+
+| Test module | Inspected code and executed scope | Remaining limit |
+| --- | --- | --- |
+| `test_category_membership.py` | In-memory direct/one-based category XML and wrapper import | Native category sampling absent; category-zero crowding belongs to exporter suite |
+| `test_editor_exporter_contract.py` | Generated signed/affine/reciprocal fixtures with independent offsets/bytes, quantization and fail-closed writes | No real definition or column-major write qualification |
+| `test_editor_portability.py` | Real CLI subprocesses from unrelated directory with spaces, exact scalar/table/flag bytes, logs/diff, exact-pair validation/export/refusal, unchanged inputs, missing-input/dependency errors | Requires installed-suite isolation; no native standalone executable |
+| `test_editor_release_safety.py` | Synthetic ambiguity, disabled commands, required autosave/output, scopes, collisions, aliases, snapshots and invalid conversions | Handled failures and synthetic paths; no hostile races or crash proof |
+| `test_exact_pair_fixture_cli.py` | Generated identity manifests, target and JSON type errors, hash mismatch before preflight and guarded delegation | Several delegates mocked; real CLI snapshot path separately exercised |
+| `test_flag_writes.py` | Generated 8-bit masks, sibling-bit preservation, invalid masks/states and log identity | Narrow mask contract |
+| `test_interrupted_save.py` | Injected open/write/short-write/flush/close/fsync/publication failures, ownership/collision rollback, BIN-last ordering, retained evidence and CLI failure | No abrupt process/power-loss transaction proof or every filesystem |
+| `test_overlapping_axis_stride.py` | Synthetic independently expected overlapping 16-bit axis values and misaligned stride refusal | Reads only; unsupported writes remain refused |
+| `test_raw_patch_manifest.py` | Strict synthetic roundtrip, hashes/identity/allowlist/immutability, malformed keys, exclusive outputs, evidence and trusted callbacks; bounded CLI timeout added | Instruction semantics and ECU compatibility absent |
+| `test_raw_patch_cli.py` | Synthetic forward/reverse verify/apply receipts and bounded subprocess; optional exact-hash DS2 replay | Optional real input depends on absent sibling workspace and skips |
+| `test_raw_patch_checksum_profiles.py` | Independent bitwise CRC arithmetic, synthetic corruption/descriptor/OSID/contract gates; optional pinned parent/DS2 replay | Some synthetic range metadata derives from production contract; real replay absent |
+| `test_ms43_raw_patch_checksum_profile.py` | Independent synthetic CRC/additive arithmetic, three/five-layer corruption/seed/metadata/OSID/order gates; optional pinned images | Native profile/range proof absent; already-public short patch assertions are not firmware fixtures |
+| `test_vy_raw_patch_checksum_profile.py` | Synthetic additive checksum/excluded ranges, corruption/size/OSID/contract gates; optional pinned parent/control | Independent real/native compatibility proof absent |
+| `test_xdf_aware_diff.py` | Generated overlap/unmapped/masked-bit attribution, report hashes, unequal tails, aliases and existing targets | No broad real-definition attribution corpus |
+
+`MANIFEST.in` was inspected: source distributions retain `test_*.py`. `pyproject.toml` packages the five runtime modules, with exact exporter dependency. Mapping CSV references remain in the repository/source history; disabled porting does not consume them from the wheel. No hidden parser, native binary or data dependency was introduced.
 
 ## Ignore, privacy and promotion review
 

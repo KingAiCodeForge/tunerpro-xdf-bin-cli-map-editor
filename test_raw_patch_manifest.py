@@ -210,6 +210,7 @@ def test_cli_apply_raw_patch_smoke(tmp_path):
         capture_output=True,
         text=True,
         check=False,
+        timeout=30,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert output.read_bytes() == patched
