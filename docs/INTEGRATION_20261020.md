@@ -2,6 +2,12 @@
 
 Version: **1.2.0rc1**, experimental, pinned to Exporter **3.7.5rc1** commit `e7c0ae86534791620ea0b843810f4980d24081d5`. This combines public source only. Native TunerPro, real-definition corpus replay, hardware and flashing remain unqualified. A skipped fixture is missing evidence.
 
+The [guard follow-up](EDITOR_GUARD_FOLLOWUP_20261020.md) continues this
+preserved candidate with final-image range validation, numerical inverse
+checks and an explicit integral-only raw-input policy. Qualification below
+is historical for the original candidate unless the follow-up receipt says
+otherwise.
+
 ## Provenance and preservation
 
 Integration starts at public main `c1de66ecc31b814925bf3a3f1346b07eecf997b3`. All original remote branches and main were retained. An original-ref manifest and a complete verified Git bundle were created outside the repository before editing. Bundle SHA-256: `4b15d7e9808ea42376c02a7e34c4ea02195c5f88ddb27814bc4c57887f4ee47b`. The preserved per-ref source manifest records every file/mode/blob, SHA-256 `e7bc3a3020ea55938d603846bb0c0a772d5253f78cabb37ebecdfefd6d9dc311`.
@@ -39,6 +45,7 @@ All test modules were individually inspected. They are synthetic regression evid
 | --- | --- | --- |
 | `test_category_membership.py` | In-memory direct/one-based category XML and wrapper import | Native category sampling absent; category-zero crowding belongs to exporter suite |
 | `test_editor_exporter_contract.py` | Generated signed/affine/reciprocal fixtures with independent offsets/bytes, quantization and fail-closed writes | No real definition or column-major write qualification |
+| `test_editor_review_guards.py` | Generated XML/BIN CLI range refusal, final-image dependency checks and rollback, fine-precision audit controls, numerical inverse and raw-input policy | Synthetic fixtures only; no global inverse, real-map or native rounding claim |
 | `test_editor_portability.py` | Real CLI subprocesses from unrelated directory with spaces, exact scalar/table/flag bytes, logs/diff, exact-pair validation/export/refusal, unchanged inputs, missing-input/dependency errors | Requires installed-suite isolation; no native standalone executable |
 | `test_editor_release_safety.py` | Synthetic ambiguity, disabled commands, required autosave/output, scopes, collisions, aliases, snapshots and invalid conversions | Handled failures and synthetic paths; no hostile races or crash proof |
 | `test_exact_pair_fixture_cli.py` | Generated identity manifests, target and JSON type errors, hash mismatch before preflight and guarded delegation | Several delegates mocked; real CLI snapshot path separately exercised |

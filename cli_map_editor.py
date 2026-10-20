@@ -357,13 +357,22 @@ class XDFBinSession:
             return -(1 << (size_bits - 1)), (1 << (size_bits - 1)) - 1
         return 0, (1 << size_bits) - 1
 
-    def _check_inverse_resolution(self, equation, raw, value, variables, bounds):
-        """A symbolic affine expression can still collapse in floating arithmetic."""
+    @staticmethod
+    def _integer_raw_target(value):
+        raw = int(value)
+        if raw != value:
+            raise ValueError("Raw edit value must be an integer; fractional raw values are not rounded")
+        return raw
+
+    def _check_inverse_resolution(self, equation, raw, value, variables, bounds, requested):
+        """Refuse collapsed or locally inferior inverse results."""
         for neighbour in (raw - 1, raw + 1):
             if bounds[0] <= neighbour <= bounds[1]:
                 adjacent, _ = self.exporter.evaluate_math(equation, neighbour, linked_vars=variables)
                 if adjacent == value:
                     raise ValueError("Equation cannot distinguish adjacent raw values; supply an explicit raw value")
+                if abs(adjacent - requested) < abs(value - requested):
+                    raise ValueError("A neighbouring raw value decodes closer to the requested value; engineering write refused")
 
     def _staged_real(self, item, offset, size, raw, signed, lsb, predicted,
                      raw_mode, table=None, row=0, col=0):
@@ -431,7 +440,7 @@ class XDFBinSession:
 
         # Compute new raw
         if raw_mode:
-            new_raw = int(round(real_value))
+            new_raw = self._integer_raw_target(real_value)
         else:
             new_raw = self._inverse_math(equation, real_value, linked_vars=z_linked_vars)
             if new_raw is None:
@@ -456,7 +465,8 @@ class XDFBinSession:
                 new_real = calc
 
         if not raw_mode:
-            self._check_inverse_resolution(equation, new_raw, new_real, z_linked_vars, (min_raw, max_raw))
+            self._check_inverse_resolution(equation, new_raw, new_real, z_linked_vars,
+                                           (min_raw, max_raw), real_value)
         new_real = self._staged_real(z, file_offset, size_bits, new_raw, signed,
             lsb_first, new_real, raw_mode, table, row - 1, col - 1)
         self._write_raw_at(file_offset, size_bits, new_raw, signed, lsb_first)
@@ -476,6 +486,41 @@ class XDFBinSession:
         }
         self.changes.append(change)
         return change
+
+    def write_table_range(self, table: Dict, rows: range, cols: range,
+                          real_value: float, raw_mode: bool = False) -> List[Dict[str, Any]]:
+        """Stage a range and recheck its exact decoded values before accepting it."""
+        before = bytes(self.bin_data)
+        change_count, log_count = len(self.changes), len(self.log_entries)
+        z = table['axes'].get('z', {})
+
+        def current_value(change):
+            raw = self._read_raw_at(int(change['file_offset'], 16),
+                z.get('size_bits', 8), z.get('signed', False), z.get('lsb_first', False))
+            variables = self._current_variables(z, table, change['row'] - 1, change['col'] - 1)
+            value, _ = self.exporter.evaluate_math(z.get('equation', ''), raw,
+                                                  linked_vars=variables)
+            return raw, value
+
+        changes, expected = [], []
+        try:
+            for row in rows:
+                for col in cols:
+                    change = self.write_table_cell(table, row, col, real_value, raw_mode)
+                    changes.append(change)
+                    # Keep full precision, not the rounded display/audit fields.
+                    expected.append(current_value(change))
+            if not changes:
+                raise ValueError("Table edit range must select at least one cell")
+            for change, value in zip(changes, expected):
+                if current_value(change) != value:
+                    raise ValueError("Range edit changes an earlier cell's conversion dependency; edit refused")
+        except BaseException:
+            self.bin_data[:] = before
+            del self.changes[change_count:]
+            del self.log_entries[log_count:]
+            raise
+        return changes
 
     def write_scalar(self, const: Dict, real_value: float,
                      raw_mode: bool = False) -> Dict[str, Any]:
@@ -512,7 +557,7 @@ class XDFBinSession:
 
         # Compute new raw
         if raw_mode:
-            new_raw = int(round(real_value))
+            new_raw = self._integer_raw_target(real_value)
         else:
             new_raw = self._inverse_math(equation, real_value, linked_vars=linked_vars)
             if new_raw is None:
@@ -536,7 +581,8 @@ class XDFBinSession:
                 new_real = calc
 
         if not raw_mode:
-            self._check_inverse_resolution(equation, new_raw, new_real, linked_vars, (min_raw, max_raw))
+            self._check_inverse_resolution(equation, new_raw, new_real, linked_vars,
+                                           (min_raw, max_raw), real_value)
         new_real = self._staged_real(const, file_offset, size_bits, new_raw, signed,
             lsb_first, new_real, raw_mode)
         unit = const.get('unit', '')
@@ -1164,25 +1210,21 @@ def cmd_edit(args):
     cols_range = parse_range(args.cols)
     raw_mode = getattr(args, 'raw', False)
 
-    count = 0
-    for r in rows_range:
-        for c in cols_range:
-            change = session.write_table_cell(
-                table, r, c, args.value, raw_mode=raw_mode)
-            print(
-                f"  {change['map']}[{r},{c}] "
-                f"addr={change['address']} "
-                f"old_raw={change['old_raw']} "
-                f"new_raw={change['new_raw']} "
-                f"old_real={change['old_real']} "
-                f"new_real={change['new_real']}")
-            count += 1
+    changes = session.write_table_range(table, rows_range, cols_range, args.value, raw_mode)
+    for change in changes:
+        print(
+            f"  {change['map']}[{change['row']},{change['col']}] "
+            f"addr={change['address']} "
+            f"old_raw={change['old_raw']} "
+            f"new_raw={change['new_raw']} "
+            f"old_real={change['old_real']} "
+            f"new_real={change['new_real']}")
 
     # TunerPro-format: one log entry per table edit command
     session.add_table_log_entry(table['title'])
 
     bin_out, log_out = session.save_final(args.output_dir, 'edited')
-    print(f"\nEdited {count} cells. Saved: {bin_out}")
+    print(f"\nEdited {len(changes)} cells. Saved: {bin_out}")
     print(f"Log:   {log_out}")
 
     return 0
@@ -1984,7 +2026,7 @@ Examples:
     p_edit.add_argument('--rows', required=True, help="Row: '3' or range '1-5' (1-based)")
     p_edit.add_argument('--cols', required=True, help="Col: '2' or range '1-4' (1-based)")
     p_edit.add_argument('--value', required=True, type=float, help='Real-world value to set')
-    p_edit.add_argument('--raw', action='store_true', help='Treat --value as raw integer')
+    p_edit.add_argument('--raw', action='store_true', help='Treat --value as an integer raw target; fractions are rejected')
     p_edit.add_argument('--autosave', '--save', dest='autosave', action='store_true', help='Required: save a new BIN with audit logs')
     p_edit.add_argument('--output-dir', default=None, help='Required output directory; existing files are never overwritten')
     p_edit.set_defaults(func=cmd_edit)
@@ -1995,7 +2037,7 @@ Examples:
     p_es.add_argument('--bin', required=True)
     p_es.add_argument('--name', required=True, help='Scalar name')
     p_es.add_argument('--value', required=True, type=float)
-    p_es.add_argument('--raw', action='store_true')
+    p_es.add_argument('--raw', action='store_true', help='Treat --value as an integer raw target; fractions are rejected')
     p_es.add_argument('--autosave', '--save', dest='autosave', action='store_true')
     p_es.add_argument('--output-dir', default=None)
     p_es.set_defaults(func=cmd_edit_scalar)
