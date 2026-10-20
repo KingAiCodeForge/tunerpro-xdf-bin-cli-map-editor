@@ -50,7 +50,7 @@ All test modules were individually inspected. They are synthetic regression evid
 | `test_vy_raw_patch_checksum_profile.py` | Synthetic additive checksum/excluded ranges, corruption/size/OSID/contract gates; optional pinned parent/control | Independent real/native compatibility proof absent |
 | `test_xdf_aware_diff.py` | Generated overlap/unmapped/masked-bit attribution, report hashes, unequal tails, aliases and existing targets | No broad real-definition attribution corpus |
 
-`MANIFEST.in` was inspected: source distributions retain `test_*.py`. `pyproject.toml` packages the five runtime modules, with exact exporter dependency. Mapping CSV references remain in the repository/source history; disabled porting does not consume them from the wheel. No hidden parser, native binary or data dependency was introduced.
+`MANIFEST.in` was inspected and extended: source distributions retain `test_*.py`, public Markdown/agent/audit documentation and reference mapping CSVs. `pyproject.toml` packages the five runtime modules, with exact exporter dependency. Disabled porting does not consume mappings from the wheel. No hidden parser, native binary or data dependency was introduced.
 
 ## Ignore, privacy and promotion review
 
@@ -82,6 +82,6 @@ Record actual Python/platform, dependency SHA, wheel hashes, import locations, e
 
 ## Executed results and remaining qualification
 
-Preliminary source execution on Windows, Python 3.13: **223 passed, 17 skipped** against this task's explicit exporter source path. Focused fixture and new CLI portability execution: **15 passed**. These were actual local executions, not GitHub runner results. Final exact-pin source/wheel/portable results are recorded after the exporter is frozen.
+Preliminary source execution on Windows, Python 3.13: **223 passed, 17 skipped** against this task's explicit exporter source path. After the new real CLI portability checks and bounded test subprocesses, the full reconciled source suite completed **226 passed, 17 skipped** in 31.23 seconds. Focused fixture and new CLI portability execution: **15 passed**; actual guarded snapshot and mismatch-refusal checks subsequently passed as part of three portability cases. These were actual local executions, not GitHub runner results. Final exact-pin source/wheel/portable results are recorded after the exporter is frozen.
 
 The 17 preliminary skips are unavailable privately held exact-image MS42/MS43/VY and raw-patch integration fixtures. They are not passing corpus results. The known MS42 linked-axis, MS43 duplicate-ID, MS45 virtual/Z-less and VY malformed-equation cases also require permissioned exact-input replay and native comparison before stable compatibility claims. No native GUI, controller, vehicle, live trading or hardware operation was performed.
