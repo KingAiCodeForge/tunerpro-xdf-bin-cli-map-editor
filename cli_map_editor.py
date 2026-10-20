@@ -38,7 +38,6 @@ import argparse
 import csv
 import hashlib
 import json
-import hashlib
 import io
 import math
 import os
@@ -73,7 +72,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-__version__ = "1.2.0"
+__version__ = "1.2.0rc1"
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1300,6 +1299,8 @@ def _load_exact_pair_fixture(path: str | Path, target_id: str) -> Dict[str, Any]
     with open(path, 'r', encoding='utf-8') as f:
         obj = json.load(f)
 
+    if not isinstance(obj, dict):
+        raise ValueError('fixture root must be an object')
     schema = obj.get('schema')
     if schema == 'kingai.exact-pair-fixture-set.v1':
         fixtures = obj.get('fixtures')
@@ -1328,7 +1329,7 @@ def _load_exact_pair_fixture(path: str | Path, target_id: str) -> Dict[str, Any]
         if not re.fullmatch(r'[0-9a-f]{64}', digest):
             raise ValueError(f'fixture {section}.sha256 must be exactly 64 hex characters')
     size = fixture['bin'].get('size')
-    if not isinstance(size, int) or size <= 0:
+    if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
         raise ValueError('fixture bin.size must be a positive integer')
     return fixture
 

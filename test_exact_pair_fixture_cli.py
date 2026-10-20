@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import cli_map_editor as editor
 
 
@@ -57,6 +58,25 @@ def test_fixture_unknown_target_fails(tmp_path):
         assert "matched 0 fixture" in str(exc)
     else:
         raise AssertionError("missing target must fail")
+
+
+@pytest.mark.parametrize('root', [None, [], 'invalid', 1])
+def test_fixture_nonobject_root_is_reported_without_preflight(tmp_path, monkeypatch, capsys, root):
+    path = tmp_path / 'fixture.json'
+    path.write_text(json.dumps(root), encoding='utf-8')
+    monkeypatch.setattr(editor, 'cmd_preflight', lambda _: pytest.fail('must stop before parsing'))
+    args = SimpleNamespace(fixture=path, target_id='synthetic', xdf='missing.xdf', bin='missing.bin')
+    assert editor.cmd_validate_fixture(args) == 1
+    assert 'fixture root must be an object' in capsys.readouterr().out
+
+
+def test_fixture_boolean_bin_size_is_rejected(tmp_path):
+    path = make_fixture(tmp_path / 'fixture.json', 'synthetic', b'A', b'<XDFFORMAT/>')
+    fixture = json.loads(path.read_text(encoding='utf-8'))
+    fixture['fixtures'][0]['bin']['size'] = True
+    path.write_text(json.dumps(fixture), encoding='utf-8')
+    with pytest.raises(ValueError, match='positive integer'):
+        editor._load_exact_pair_fixture(path, 'synthetic')
 
 
 def test_hash_mismatch_stops_before_preflight(tmp_path, monkeypatch, capsys):

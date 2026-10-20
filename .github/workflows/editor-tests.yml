@@ -29,8 +29,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $wheel = Get-Item dist/kingai_tunerpro_map_editor-1.1.0-*.whl
-          python -m pip install $wheel.FullName
+          $wheels = @(Get-ChildItem dist/kingai_tunerpro_map_editor-*.whl)
+          if ($wheels.Count -ne 1) { throw "Expected exactly one Editor wheel, got $($wheels.Count)" }
+          python -m pip install $wheels[0].FullName
           exit $LASTEXITCODE
       - name: Test installed packages away from source
         shell: pwsh

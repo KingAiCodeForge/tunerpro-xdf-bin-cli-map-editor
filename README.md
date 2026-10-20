@@ -2,14 +2,14 @@
 
 **Offline XDF/BIN inspection, bounded calibration edits and reproducible byte-level review.**
 
-- **Documented release:** `main`, **v1.1.0**, based on the 8 October 2026 release branch.
-- **Documentation review:** 16 October 2026.
+- **Version:** **1.2.0rc1**, an experimental integration prerelease.
+- **Documentation review:** 20 October 2026.
 - **Author:** KingAI Pty Ltd / KingAiCodeForge.
 - **Status:** Research and engineering tooling. **Not a flasher, autonomous tuner or vehicle-safety approval.**
 
 The editor reads TunerPro XDF definitions against a supplied BIN, lets a human or a terminal-capable agent inspect supported items, and produces new BINs and audit records for a narrowly supported set of integer edits. **A valid-looking table, preflight pass or successful byte diff does not prove the selected calibration controls the intended ECU function.** Verify exact software identity, storage, equations, linked items and firmware consumers independently before relying on a definition.
 
-This README describes the **code currently on the public `main` branch**, not unmerged experimental branches or private integration packages. Historical documentation and examples are preserved in [the previous README revision](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md); its disabled-command examples are not current instructions.
+This README describes this integration revision. Read [AGENTS.md](AGENTS.md) for the read-only-first workflow and [integration evidence](docs/INTEGRATION_20261020.md) for provenance, executed checks and unresolved qualification. Historical documentation and examples are preserved in [the previous README revision](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md); its disabled-command examples are not current instructions.
 
 ## Who operates this tool?
 
@@ -27,7 +27,7 @@ The agent is an **operator of deterministic software**, not an oracle for ECU co
 | “Apply this **exact** supplied raw-byte patch” | Verify hash-bound v2 manifest and, if approved, apply to a new file | Static verification does not prove code execution or flash readiness |
 | “Make a bouncing limiter / decel tune” | **Investigate first**: locate candidate controls, request hardware/log evidence, report what's proved | No automatic tune recipe, unproven limiter patch or claim of engine safety |
 
-**Execution requirement:** the AI must actually have filesystem and terminal access, a working Python environment and the pinned Exporter dependency. Attaching the source ZIP to an ordinary chat **does not necessarily allow it to run**. No built-in LLM, GPU or MCP server is required to operate the present CLI; an MCP server is a future *adapter* rather than a prerequisite. This is a **Python source-distributed Editor with an MIT licence**, but the dependency chain is not uniformly MIT; see [Licensing](#licensing).
+**Execution requirement:** the AI must actually have filesystem and terminal access, a working Python environment and the pinned Exporter dependency. Attaching the source ZIP to an ordinary chat **does not necessarily allow it to run**. No built-in LLM, GPU or MCP server is required to operate the present CLI; an MCP server is a future *adapter* rather than a prerequisite. The Editor and its pinned Exporter source use the MIT licence; see [Licensing](#licensing).
 
 ## Install
 
@@ -52,12 +52,24 @@ The commands below use the installed `kingai-map-editor` entry point. `python cl
 | `preflight` | Check declared addresses, readable items, BIN bounds and reported table overlaps | Structural heuristic only; not OSID, firmware-consumer, checksum or hardware proof |
 | `diff` | Compare raw BIN bytes; optional XDF attribution and JSON/CSV reports | Attribution depends on definition accuracy; unknown bytes remain unknown |
 | `export` | Create a new timestamped snapshot directory holding BIN, TXT, JSON, Markdown and conversion-error report | Refuses incomplete supported export; not a TunerPro native export |
-| `edit`, `edit-scalar` | Bounded integer edits with supported contiguous storage and proven affine inverse; raw mode where allowed | Requires `--autosave --output-dir`; rejects unsupported math/storage/geometry |
+| `validate-fixture`, `export-fixture` | Verify exact BIN size and BIN/XDF SHA-256, then reuse preflight and optionally guarded export | Identity is not native parity, ECU semantics or flash qualification |
+| `edit`, `edit-scalar` | Bounded integer edits with supported contiguous storage and proven affine or narrow `K/X` inverse; raw mode where allowed | Requires `--autosave --output-dir`; rejects unsupported math/storage/geometry |
 | `edit-flag` | Set/clear declared 8-bit masks without altering unrelated bits in the same byte | Requires `--autosave --output-dir`; mask and definition must be correct |
 | `verify-raw-patch`, `apply-raw-patch` | Check and apply/reverse strict v2, hash-bound byte manifests to **new** files | Static byte contract only; does not verify patch execution or flash readiness |
 | `batch`, `port`, standalone `save` | **Disabled; return an error** | Do not use examples from the historical README as supported workflows |
 
-**Not supported as a qualified write interface on this release:** IEEE-754 float writes, nonlinear/reciprocal inverses, scoped per-cell XDF math, arbitrary/non-contiguous strides, automatic cross-ECU porting, multi-operation batch writes, live ECU communication, checksum repair or flashing. An unmerged review branch may contain experimental work; it is not part of this release.
+**Unsupported writes:** IEEE-754 float writes, nonlinear inverses outside the proven affine and narrow `K/X` classes, scoped per-cell XDF math, arbitrary/non-contiguous strides, automatic cross-ECU porting and multi-operation batch writes. Reciprocal zero targets and unsupported rearrangements fail closed; there is no numerical-search inverse fallback. Live ECU communication, checksum repair and flashing are unavailable. Synthetic success does not qualify any real ECU definition.
+
+## Exact-pair fixture gate
+
+`validate-fixture` verifies a selected target's exact BIN size and BIN/XDF SHA-256 before normal read-only preflight. `export-fixture` runs the same gate, then reuses the existing guarded snapshot exporter. Supported JSON schemas are `kingai.exact-pair-fixture-set.v1` and the single `kingai.exact-bin-xdf-fixture.v1`.
+
+```console
+kingai-map-editor validate-fixture --fixture exact_pairs.json --target-id synthetic-demo --xdf "definition file.xdf" --bin "original file.bin"
+kingai-map-editor export-fixture --fixture exact_pairs.json --target-id synthetic-demo --xdf "definition file.xdf" --bin "original file.bin" --output-dir "review snapshots"
+```
+
+The fixture gate proves identity only. No customer or real ECU fixture is distributed in this package.
 
 ## Safe first pass: inspect without changing firmware
 
@@ -95,7 +107,7 @@ Each successful edit creates a new timestamped BIN plus a project-owned text `.l
 TIMESTAMP,MAP_NAME,TYPE,ROW,COLUMN,ADDRESS,FILE_OFFSET,OLD_RAW,NEW_RAW,OLD_HEX,NEW_HEX,OLD_REAL,NEW_REAL,UNIT,SIZE_BITS
 ```
 
-Outputs are protected against filename collisions, but **v1.1.0 is not a crash-proof multi-file transaction**: an interrupted filesystem operation may leave incomplete new outputs. Do not treat those outputs as a verified edit. More comprehensive staged-save work exists on a separate review branch and is not included in the public `main` build.
+Saves prepare and fsync all payloads before publication, publish the audit files first and the BIN last, and refuse existing destinations. A handled failure attempts to roll back only outputs owned by that save and retains labelled `.kingai-save-*.incomplete/` staging evidence. This is **not a crash-proof multi-file transaction**. Treat incomplete staging and any output requiring inspection as a failed save, and keep that evidence private.
 
 Use the **actual output filename** printed by the edit command in the subsequent diff. Do not reuse the original input path as an output, and do not assume a particular timestamp.
 
