@@ -45,6 +45,7 @@ import os
 import re
 import struct
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from contextlib import ExitStack, nullcontext
@@ -114,6 +115,83 @@ def _format_raw_hex(raw: int, size_bits: int) -> str:
         # Handle signed: show two's complement
         raw = raw & ((1 << size_bits) - 1)
     return f"0x{raw:0{hex_digits}X}"
+
+
+class SaveIncompleteError(OSError):
+    """A failed coordinated save whose staging evidence has been retained."""
+
+
+def _publish_staged_file(staged: Path, destination: Path) -> None:
+    # Windows rename refuses an existing destination and also works on FAT/exFAT.
+    # POSIX rename can overwrite, so publish with an exclusive same-filesystem link.
+    if os.name == 'nt':
+        os.rename(staged, destination)
+    else:
+        os.link(staged, destination)
+
+
+def _save_audited_payloads(output_paths, payloads) -> None:
+    """Prepare all bytes before publication; retain clearly labelled failures.
+
+    This is not a crash-proof multi-file filesystem transaction. Audit files are
+    published before the BIN, and ordinary partial payloads are never published.
+    """
+    root = output_paths[0].parent
+    staging = Path(tempfile.mkdtemp(prefix='.kingai-save-', suffix='.incomplete', dir=root))
+    stages = [staging / path.name for path in output_paths]
+    manifest = staging / 'save-state.json'
+    published = []
+    try:
+        with open(manifest, 'x', encoding='utf-8') as handle:
+            json.dump({'status': 'INCOMPLETE', 'planned_outputs': [p.name for p in output_paths]}, handle)
+        for index in (1, 2, 0):
+            with open(stages[index], 'xb') as handle:
+                written = handle.write(payloads[index])
+                if written != len(payloads[index]):
+                    raise OSError(f'Short write for {output_paths[index].name}')
+                handle.flush()
+                os.fsync(handle.fileno())
+        for index in (1, 2, 0):
+            staged = stages[index]
+            identity = staged.stat()
+            _publish_staged_file(staged, output_paths[index])
+            published.append((output_paths[index], staged, identity.st_dev, identity.st_ino))
+    except BaseException as exc:
+        rollback_errors = []
+        for destination, staged, device, inode in reversed(published):
+            try:
+                if destination.is_symlink():
+                    raise OSError('Destination was replaced by a symlink')
+                if staged.exists() and os.path.samefile(destination, staged):
+                    destination.unlink()
+                else:
+                    current = destination.stat()
+                    if not inode or (current.st_dev, current.st_ino) != (device, inode):
+                        raise OSError('Cannot establish ownership of published output')
+                    # Windows moved this newly created file out of staging.
+                    # Move only that same file back; never overwrite another path.
+                    if os.name != 'nt' or os.path.lexists(staged):
+                        raise OSError('Cannot restore staged output without replacing a path')
+                    os.rename(destination, staged)
+            except OSError as rollback_error:
+                rollback_errors.append(f'{destination}: {rollback_error}')
+        if not isinstance(exc, Exception):
+            raise
+        details = '; '.join(rollback_errors)
+        raise SaveIncompleteError(
+            f'INCOMPLETE save; staging retained at {staging}. '
+            f'No successful BIN save was reported. {exc}'
+            + (f' Published outputs requiring inspection: {details}' if details else '')
+        ) from exc
+    # Cleanup concerns only files created by this save, never source/user files.
+    try:
+        for staged in stages:
+            if staged.exists():
+                staged.unlink()
+        manifest.unlink()
+        staging.rmdir()
+    except OSError as exc:
+        print(f'WARNING: All outputs were published, but staging cleanup failed: {staging}: {exc}', file=sys.stderr)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -215,7 +293,7 @@ class XDFBinSession:
         """Read the containing byte and selected flag state."""
         address = flag['address']
         mask = flag.get('mask', 0x01)
-        if not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
+        if isinstance(mask, bool) or not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
             raise ValueError(f"Flag '{flag['title']}' has invalid mask {mask!r}")
         file_offset = self.exporter._xdf_addr_to_file_offset(address)
         raw = self._read_raw_at(file_offset, 8)
@@ -568,6 +646,9 @@ class XDFBinSession:
         log_out = os.path.join(output_dir, log_name)
         detail_out = os.path.join(output_dir, detail_name)
         output_paths = [Path(path) for path in (bin_out, log_out, detail_out)]
+        output_root = Path(output_dir).resolve()
+        if any(path.parent.resolve() != output_root for path in output_paths):
+            raise ValueError('Every save output must stay in the requested output directory')
         protected = {Path(self.bin_path).resolve(), Path(self.xdf_path).resolve()}
         resolved = [path.resolve() for path in output_paths]
         if len(set(resolved)) != len(resolved) or any(path in protected for path in resolved):
@@ -584,13 +665,7 @@ class XDFBinSession:
         payloads = [bytes(self.bin_data), log_buffer.getvalue().encode('utf-8'),
                     detail_buffer.getvalue().encode('utf-8')]
         os.makedirs(output_dir, exist_ok=True)
-        # Exclusive creation also protects against collisions after preflight.
-        # Reserve all paths before writing bytes; preserve reservations on an
-        # I/O error rather than deleting any files. The caller reports failure.
-        with ExitStack() as stack:
-            handles = [stack.enter_context(open(path, 'xb')) for path in output_paths]
-            for index in (1, 2, 0):
-                handles[index].write(payloads[index])
+        _save_audited_payloads(output_paths, payloads)
         return bin_out, log_out
 
     def add_table_log_entry(self, table_title: str):
@@ -1356,7 +1431,10 @@ def cmd_preflight(args):
         except (ValueError, IndexError) as exc:
             issues.append(f"Scalar '{const['title']}': {exc}")
     for flag in session.flags:
-        if session.exporter.read_value_from_bin(flag['address'], 8) is None:
+        mask = flag.get('mask', 0x01)
+        if isinstance(mask, bool) or not isinstance(mask, int) or not 0 < mask <= 0xFF:
+            issues.append(f"Flag '{flag['title']}' has invalid mask {mask!r}")
+        elif session.exporter.read_value_from_bin(flag['address'], 8) is None:
             issues.append(f"Flag '{flag['title']}' cannot be read")
 
     for t in session.tables:

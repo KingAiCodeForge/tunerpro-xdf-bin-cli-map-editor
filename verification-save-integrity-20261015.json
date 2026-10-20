@@ -1,0 +1,35 @@
+{
+  "schema": "kingai.editor-save-integrity-verification.v1",
+  "date_adelaide": "2026-10-15",
+  "parent_commit": "95cc0f9",
+  "source_suite": {
+    "passed": 203,
+    "skipped": 17
+  },
+  "installed_save_release_suite": {
+    "passed": 60,
+    "isolated_imports": true,
+    "import_mode": "importlib"
+  },
+  "exporter_dependency": {
+    "commit": "f81e0cd6b522b8142e7424774ec068c9bb711792",
+    "pin_changed": false,
+    "version": "3.7.2"
+  },
+  "wheel_sha256": "5a273789d7882aebcfe76a83632aa886a435730f27b8d5ccca62634c455e2823",
+  "behavior": [
+    "payload staging and fsync before publication",
+    "BIN published last",
+    "failed-save staging retained under .incomplete directories",
+    "owned published files rolled back after handled failure",
+    "colliding destinations preserved",
+    "invalid flag masks fail preflight"
+  ],
+  "limitations": [
+    "Windows filesystem tests only",
+    "not a crash-proof multi-file filesystem transaction",
+    "physical tuning and flash safety unqualified"
+  ],
+  "hardware_connected": false,
+  "github_actions_run": false
+}
