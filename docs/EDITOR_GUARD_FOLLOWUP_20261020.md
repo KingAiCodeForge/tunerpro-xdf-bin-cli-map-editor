@@ -1,5 +1,11 @@
 # Editor Guard Follow-Up - 20 October 2026
 
+Version: **1.2.0rc2**. Public PR #7 independently merged the broader integration
+and published v1.2.0rc1 while this guard follow-up was in progress. That new
+main was merged here without deleting or rewriting either history. Its BMW
+documentation corrections, two tests and CI fixture staging are retained.
+No v1.2.0rc1 release asset is replaced by this follow-up.
+
 This continues preserved integration candidate
 `383befae5d77bcd354c4bef880cda4692600c8cd`, not a rebuild from an older
 checkout. The dependency remains exact Exporter source
@@ -53,7 +59,9 @@ pip wheel as bootstrap; no system packages were installed. This does not prove
 that the standard offline installer works on a host without venv/ensurepip.
 No macOS or Python 3.10 execution is claimed. Hosted CI remains a separate gate.
 
-Qualified local artifacts (not a claim of a published GitHub Release):
+Initial qualified local artifacts before reconciliation with PR #7. These
+are preserved historical outputs, not the published v1.2.0rc1 release assets
+or the new v1.2.0rc2 artifacts:
 
 | Artifact | SHA-256 |
 | --- | --- |
