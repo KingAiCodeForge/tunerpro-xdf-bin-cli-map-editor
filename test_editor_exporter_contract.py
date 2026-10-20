@@ -155,7 +155,7 @@ def test_nonfinite_write_preserves_memory_source_and_audit(tmp_path, kind, raw_m
 
 
 @pytest.mark.parametrize("kind", ["scalar", "table"])
-@pytest.mark.parametrize("equation", ["X*X", "X*0+7"])
+@pytest.mark.parametrize("equation", ["X*X", "X*0+7", "5.1/(X+1)", "X/(2*X)"])
 def test_noninvertible_engineering_write_is_rejected_without_mutation(tmp_path, kind, equation):
     session, original = make_session(tmp_path, scalar_equation=equation, table_equation=equation)
     with pytest.raises(ValueError, match="Cannot convert"):
@@ -191,3 +191,42 @@ def test_malformed_definition_does_not_create_mutable_session(tmp_path, definiti
     assert session.changes == []
     assert session.log_entries == []
     assert bin_path.read_bytes() == original
+
+
+@pytest.mark.parametrize("kind", ["scalar", "table"])
+def test_proven_reciprocal_engineering_write_changes_only_target_storage(tmp_path, kind):
+    session, original = make_session(
+        tmp_path,
+        scalar_equation="5.1/X",
+        table_equation="(0*X-65536)/(0-(100*X))",
+    )
+    if kind == "scalar":
+        item = session.constants[0]
+        target_real = 5.1 / 11
+        change = session.write_scalar(item, target_real)
+        offset = SCALAR_OFFSET
+        expected_raw = 11
+    else:
+        item = session.tables[0]
+        expected_raw = 13
+        target_real = 655.36 / expected_raw
+        change = session.write_table_cell(item, 1, 1, target_real)
+        offset = TABLE_OFFSET
+
+    expected = bytearray(original)
+    expected[offset:offset + 2] = struct.pack("<h", expected_raw)
+    assert session.bin_data == expected
+    assert change["new_raw"] == expected_raw
+    assert Path(session.bin_path).read_bytes() == original
+
+
+@pytest.mark.parametrize("kind", ["scalar", "table"])
+def test_reciprocal_engineering_zero_is_rejected_without_mutation(tmp_path, kind):
+    session, original = make_session(
+        tmp_path,
+        scalar_equation="5.1/X",
+        table_equation="12.8/X",
+    )
+    with pytest.raises(ValueError, match="Cannot convert"):
+        write_item(session, kind, 0.0)
+    assert_unmodified(session, original)
