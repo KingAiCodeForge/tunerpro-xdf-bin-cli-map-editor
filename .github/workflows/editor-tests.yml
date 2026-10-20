@@ -41,6 +41,7 @@ jobs:
           $testRoot = Join-Path $env:RUNNER_TEMP 'editor-tests'
           New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
           Copy-Item -Path test_*.py -Destination $testRoot
+          Copy-Item -LiteralPath BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md -Destination $testRoot
           Set-Location $testRoot
           python -I -m pytest --import-mode=importlib -q
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
