@@ -44,7 +44,7 @@ The package is `kingai-tunerpro-map-editor==1.2.0rc1`. Its `pyproject.toml` pins
 
 The commands below use the installed `kingai-map-editor` entry point. `python cli_map_editor.py` also works from a correctly installed source checkout. Use a matching, lawfully obtained XDF and BIN; neither is supplied in this repository.
 
-An offline release bundle contains the exact Editor and Exporter wheels, checksums and a Python installer. It requires Python 3.10+; extract it and run `python "path to bundle/install.py"`. The installer checks wheel hashes before creating a new environment, installs with no network index and refuses an existing environment. This is a portable Python distribution; it does not include a Python interpreter or standalone executable. To reproduce the asset, run `python -m build_portable_bundle --help` and supply the two exact tested wheels and exporter commit.
+An offline release bundle contains the exact Editor and Exporter wheels, checksums and a Python installer. It requires Python 3.10+ with working `venv` and `ensurepip` support; extract it and run `python "path to bundle/install.py"`. The installer checks wheel hashes before creating a new environment, installs with no network index and refuses an existing environment. This is a portable Python distribution; it does not include a Python interpreter or standalone executable. To reproduce the asset, run `python -m build_portable_bundle --help` and supply the two exact tested wheels and exporter commit.
 
 ## What works on `main`
 

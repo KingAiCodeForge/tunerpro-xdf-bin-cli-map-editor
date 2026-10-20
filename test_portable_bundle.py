@@ -2,6 +2,7 @@
 import base64
 import csv
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -133,6 +134,21 @@ def test_pip_global_configuration_is_disabled_for_all_install_calls(tmp_path, mo
     assert '--no-deps' in calls[0][0]
 
 
+def test_missing_venv_support_reports_requirement_and_retains_evidence(tmp_path, monkeypatch):
+    output, _editor, _exporter = make_bundle(tmp_path)
+    root = tmp_path / 'missing venv support'
+    extract_bundle(output, root)
+
+    def unavailable(*args):
+        raise OSError('synthetic unavailable ensurepip')
+
+    monkeypatch.setattr(portable_install.venv.EnvBuilder, 'create', unavailable)
+    destination = tmp_path / 'incomplete environment'
+    with pytest.raises(RuntimeError, match='venv/ensurepip support is required'):
+        portable_install.install_bundle(root, destination)
+    assert destination.is_dir()
+
+
 @pytest.mark.parametrize('damage', ['missing', 'corrupted'])
 def test_installer_checks_wheels_before_creating_environment(tmp_path, damage):
     output, editor, _exporter = make_bundle(tmp_path)
@@ -162,6 +178,8 @@ def test_installer_refuses_existing_environment_without_changes(tmp_path):
     assert marker.read_text(encoding='utf-8') == 'preserved'
 
 
+@pytest.mark.skipif(importlib.util.find_spec('ensurepip') is None,
+                    reason='Python ensurepip/venv support unavailable; offline venv installation is not qualified')
 def test_offline_bundle_installs_into_new_environment_with_spaces(tmp_path):
     output, _editor, _exporter = make_bundle(tmp_path)
     root = tmp_path / 'offline package with spaces'
