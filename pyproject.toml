@@ -12,7 +12,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "Jason King"}]
 dependencies = [
-  "kingai-tunerpro-xdf @ git+https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter.git@ec1315b743cca78811253a93e853c8d7c349d6cc",
+  "kingai-tunerpro-xdf @ git+https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter.git@e7c0ae86534791620ea0b843810f4980d24081d5",
 ]
 
 [project.optional-dependencies]

@@ -21,6 +21,14 @@ def verify_bundle(root: Path) -> list[Path]:
     manifest = json.loads((root / 'portable-manifest.json').read_text(encoding='utf-8'))
     if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
         raise ValueError('Unsupported portable bundle manifest')
+    installer_digest = manifest.get('installer_sha256')
+    if not isinstance(installer_digest, str) or not re.fullmatch(r'[0-9a-f]{64}', installer_digest):
+        raise ValueError('Invalid installer SHA-256')
+    if hashlib.sha256((root / 'install.py').read_bytes()).hexdigest() != installer_digest:
+        raise ValueError('Installer checksum mismatch')
+    if manifest.get('python_requires') != '>=3.10' or not re.fullmatch(
+            r'[0-9a-f]{40}', str(manifest.get('exporter_commit', ''))):
+        raise ValueError('Invalid Python requirement or Exporter commit in manifest')
     wheels = manifest.get('wheels')
     if not isinstance(wheels, list) or len(wheels) != 2:
         raise ValueError('Bundle must declare exactly the Editor and Exporter wheels')
@@ -60,15 +68,23 @@ def install_bundle(root: Path, destination: Path) -> Path:
     # Reserve exclusively after all integrity checks. Never reuse a caller's venv.
     destination.mkdir()
     try:
-        venv.EnvBuilder(with_pip=True).create(destination)
+        try:
+            venv.EnvBuilder(with_pip=True).create(destination)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(
+                f'Python venv/ensurepip support is required. Incomplete environment retained at {destination}: {exc}'
+            ) from exc
         python = destination / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+        # --isolated alone still reads global/site pip config, which could redirect
+        # writes via target/prefix. os.devnull disables every pip config file.
+        child_env = dict(os.environ, PIP_CONFIG_FILE=os.devnull)
         subprocess.run(
             [str(python), '-I', '-m', 'pip', '--isolated', 'install',
              '--no-index', '--no-deps', '--disable-pip-version-check', *map(str, wheels)],
-            check=True, timeout=120,
+            check=True, timeout=120, env=child_env,
         )
         subprocess.run([str(python), '-I', '-m', 'pip', '--isolated', 'check'],
-                       check=True, timeout=120)
+                       check=True, timeout=120, env=child_env)
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f'Installation incomplete; retained for inspection at {destination}: {exc}') from exc
     return python

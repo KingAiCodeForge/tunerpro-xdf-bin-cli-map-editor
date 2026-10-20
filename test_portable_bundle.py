@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,18 +13,19 @@ import zipfile
 import pytest
 
 import build_portable_bundle as builder
+import portable_install
 
 
 COMMIT = 'a' * 40
 
 
-def synthetic_wheel(root, name, version, dependencies=()):
+def synthetic_wheel(root, name, version, dependencies=(), *, license_expression='MIT'):
     distribution = name.replace('-', '_')
     prefix = f'{distribution}-{version}.dist-info'
     entries = {
         f'{distribution}.py': b'SYNTHETIC_TEST_FIXTURE = True\n',
         f'{prefix}/METADATA': (
-            f'Metadata-Version: 2.3\nName: {name}\nVersion: {version}\nRequires-Python: >=3.10\n'
+            f'Metadata-Version: 2.3\nName: {name}\nVersion: {version}\nRequires-Python: >=3.10\nLicense-Expression: {license_expression}\n'
             + ''.join(f'Requires-Dist: {requirement}\n' for requirement in dependencies) + '\n'
         ).encode('utf-8'),
         f'{prefix}/WHEEL': b'Wheel-Version: 1.0\nGenerator: synthetic-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
@@ -90,6 +92,45 @@ def test_bundle_rejects_different_dependency_commit(tmp_path):
     with pytest.raises(ValueError, match='dependency does not match'):
         builder.build_bundle(editor, exporter, 'b' * 40, refused)
     assert not refused.exists()
+
+
+def test_bundle_refuses_unreviewed_license(tmp_path):
+    editor = synthetic_wheel(tmp_path, 'kingai-tunerpro-map-editor', '1.2.0rc1',
+                             [f'kingai-tunerpro-xdf @ {builder.EXPORTER_URL}{COMMIT}'])
+    exporter = synthetic_wheel(tmp_path, 'kingai-tunerpro-xdf', '3.7.5rc1',
+                               license_expression='Proprietary')
+    refused = tmp_path / 'unreviewed.zip'
+    with pytest.raises(ValueError, match='MIT licence'):
+        builder.build_bundle(editor, exporter, COMMIT, refused)
+    assert not refused.exists()
+
+
+def test_corrupted_installer_is_refused_before_environment_creation(tmp_path):
+    output, _editor, _exporter = make_bundle(tmp_path)
+    root = tmp_path / 'installer corruption'
+    extract_bundle(output, root)
+    script = root / 'install.py'
+    script.write_bytes(script.read_bytes() + b'\n# synthetic accidental corruption\n')
+    result = run_installer(root, tmp_path)
+    assert result.returncode != 0
+    assert 'Installer checksum mismatch' in result.stderr
+    assert not (root / '.venv').exists()
+
+
+def test_pip_global_configuration_is_disabled_for_all_install_calls(tmp_path, monkeypatch):
+    output, _editor, _exporter = make_bundle(tmp_path)
+    root = tmp_path / 'config isolation'
+    extract_bundle(output, root)
+    monkeypatch.setattr(portable_install.venv.EnvBuilder, 'create', lambda *args: None)
+    calls = []
+    monkeypatch.setattr(portable_install.subprocess, 'run', lambda command, **kwargs: calls.append((command, kwargs)))
+    portable_install.install_bundle(root, tmp_path / 'new environment')
+    assert len(calls) == 2
+    for command, options in calls:
+        assert '--isolated' in command
+        assert options['env']['PIP_CONFIG_FILE'] == os.devnull
+    assert '--no-index' in calls[0][0]
+    assert '--no-deps' in calls[0][0]
 
 
 @pytest.mark.parametrize('damage', ['missing', 'corrupted'])

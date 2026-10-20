@@ -40,7 +40,7 @@ python -m pip install .
 kingai-map-editor --help
 ```
 
-The package is `kingai-tunerpro-map-editor==1.1.0`. Its `pyproject.toml` pins the **Universal Exporter 3.7.2** source to commit `f81e0cd6b522b8142e7424774ec068c9bb711792`. `tunerpro_exporter_for_cli_editor_version.py` is a compatibility entry point importing that installed package, **not a second bundled/cloned parser**. No sibling Exporter checkout is required for the installed CLI.
+The package is `kingai-tunerpro-map-editor==1.2.0rc1`. Its `pyproject.toml` pins the **Universal Exporter 3.7.5rc1** source to exact tested commit `e7c0ae86534791620ea0b843810f4980d24081d5`. `tunerpro_exporter_for_cli_editor_version.py` is a compatibility entry point importing that installed package, **not a second bundled/cloned parser**. No sibling Exporter checkout is required for the installed CLI.
 
 The commands below use the installed `kingai-map-editor` entry point. `python cli_map_editor.py` also works from a correctly installed source checkout. Use a matching, lawfully obtained XDF and BIN; neither is supplied in this repository.
 
@@ -207,6 +207,6 @@ These guides contain historical research; follow the code and **current branch-s
 
 ## Licensing
 
-The Editor's [LICENSE](LICENSE) is MIT. Its pinned Universal Exporter dependency has a **separate custom source-available licence**, which the Editor's MIT licence does not override. Review the [Exporter's terms at the pinned commit](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter/blob/f81e0cd6b522b8142e7424774ec068c9bb711792/LICENSE) before redistribution or commercial reuse.
+The Editor's [LICENSE](LICENSE) and pinned Universal Exporter source both use MIT. Review the [Exporter's licence at the exact pinned commit](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter/blob/e7c0ae86534791620ea0b843810f4980d24081d5/LICENSE). Earlier dependency revisions used different terms; this pin does not relicense their history or third-party/customer inputs.
 
 Thanks to Mark Mansur and the TunerPro/XDF community for the format, native editor and contributed definitions. This project is independent of and not endorsed by TunerPro.

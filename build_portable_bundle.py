@@ -29,6 +29,8 @@ def _read_wheel(path: Path, expected_name: str) -> tuple[bytes, dict, list[str]]
     name = re.sub(r'[-_.]+', '-', str(metadata.get('Name', ''))).lower()
     if name != expected_name:
         raise ValueError(f'Wrong wheel package: expected {expected_name}, got {name}')
+    if str(metadata.get('License-Expression') or metadata.get('License') or '').strip() != 'MIT':
+        raise ValueError(f'Wheel must declare the reviewed MIT licence: {path.name}')
     version = str(metadata.get('Version', ''))
     if not version:
         raise ValueError(f'Wheel has no version: {path.name}')
@@ -56,10 +58,10 @@ def build_bundle(editor_wheel: Path, exporter_wheel: Path, exporter_commit: str,
                 'installer_sha256': hashlib.sha256(installer).hexdigest()}
     readme = (
         f'KingAI Editor {editor_entry["version"]} / Exporter {exporter_entry["version"]}\n'
-        'Offline portable Python bundle — requires Python 3.10 or later.\n\n'
+        'Offline portable Python bundle — requires Python 3.10+ with venv/ensurepip.\n\n'
         'Extract into a new folder. From any working directory, run:\n'
         '  python "path to extracted bundle/install.py"\n'
-        'The installer verifies both wheel SHA-256 values before creating a new\n'
+        'The installer verifies its own and both wheel SHA-256 values before creating a new\n'
         'environment. It installs local wheels with no index and no dependencies,\n'
         'then runs pip check. An existing .venv is refused and never overwritten.\n'
         'Use --venv "new environment path" to select another new directory.\n'
@@ -67,11 +69,11 @@ def build_bundle(editor_wheel: Path, exporter_wheel: Path, exporter_commit: str,
         'After installation run the printed Python command with --help.\n'
         'This bundle includes no Python interpreter or standalone executable,\n'
         'firmware, XDF definition, customer data, or local configuration.\n'
-        'Both wheels contain MIT licence metadata. Check the release evidence\n'
+        'Both wheels declare MIT licence metadata. Check the release evidence\n'
         'for tested platforms, skipped corpus, and native-parity limitations.\n'
         'This is experimental offline inspection/editing software; it does not\n'
         'qualify an ECU definition, tune, checksum repair or flashing operation.\n\n'
-        f'Exact tested Exporter source commit: {exporter_commit}\n'
+        f'Editor dependency declares Exporter source commit: {exporter_commit}\n'
         'Checksums detect corruption; they are not a publisher signature.\n'
     ).encode('utf-8')
     members = {'install.py': installer, 'README.txt': readme,
