@@ -45,6 +45,7 @@ All test modules were individually inspected. They are synthetic regression evid
 | --- | --- | --- |
 | `test_category_membership.py` | In-memory direct/one-based category XML and wrapper import | Native category sampling absent; category-zero crowding belongs to exporter suite |
 | `test_editor_exporter_contract.py` | Generated signed/affine/reciprocal fixtures with independent offsets/bytes, quantization and fail-closed writes | No real definition or column-major write qualification |
+| `test_editor_review_guards.py` | Generated XML/BIN CLI range refusal, final-image dependency checks and rollback, fine-precision audit controls, numerical inverse and raw-input policy | Synthetic fixtures only; no global inverse, real-map or native rounding claim |
 | `test_editor_portability.py` | Real CLI subprocesses from unrelated directory with spaces, exact scalar/table/flag bytes, logs/diff, exact-pair validation/export/refusal, unchanged inputs, missing-input/dependency errors | Requires installed-suite isolation; no native standalone executable |
 | `test_editor_release_safety.py` | Synthetic ambiguity, disabled commands, required autosave/output, scopes, collisions, aliases, snapshots and invalid conversions | Handled failures and synthetic paths; no hostile races or crash proof |
 | `test_exact_pair_fixture_cli.py` | Generated identity manifests, target and JSON type errors, hash mismatch before preflight and guarded delegation | Several delegates mocked; real CLI snapshot path separately exercised |

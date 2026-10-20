@@ -33,10 +33,41 @@ requiring the newly introduced range API failed until it was implemented.
 
 ## Qualification
 
-Windows Python 3.13 source execution completed **266 passed, 17 skipped**
-after the implementation. The skips remain unavailable exact-image integration
-inputs; they are not real-definition passes. Final installed-package and
-portable-bundle receipts are recorded separately after artifact execution.
+Runtime/test source commit:
+`c4a5119c7c721bc0c26eecb1d4df9d2bd8b44c48`. This documentation receipt is
+committed afterward; it does not alter the qualified runtime modules.
+
+| Execution | Measured result |
+| --- | --- |
+| Windows / Python 3.13.5 source | 266 passed, 17 skipped; 35.16 s |
+| Windows / Python 3.13.5 fresh installed wheels, tests copied away from source, `-I` / importlib mode | 266 passed, 17 skipped; 37.47 s |
+| Ubuntu 24.04 / WSL / Python 3.12.3, fresh installed identical wheels, tests copied away from source, `-I` / importlib mode | 265 passed, 18 skipped; 19.28 s |
+| Seven Editor plus eight Exporter runtime modules | Exact Git blob = wheel = Windows installed bytes; identical wheel hashes and wheel = installed module bytes rechecked on Linux |
+| Windows offline bundle, extracted path with spaces and unrelated working directory | Fresh install, `pip check`, installed help passed; repeated install refused the existing environment |
+| Windows clean online dependency resolution from Editor wheel | Fetched exact declared Exporter Git commit, built/installed dependency, `pip check` and installed help passed |
+
+The 17 common skips remain unavailable exact-image integration inputs, not
+real-definition passes. WSL's missing `ensurepip` adds one explicit environment
+skip. Linux qualification used a fresh stdlib venv with a separately downloaded
+pip wheel as bootstrap; no system packages were installed. This does not prove
+that the standard offline installer works on a host without venv/ensurepip.
+No macOS or Python 3.10 execution is claimed. Hosted CI remains a separate gate.
+
+Qualified local artifacts (not a claim of a published GitHub Release):
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `kingai_tunerpro_map_editor-1.2.0rc1-py3-none-any.whl` | `0b00f72385cea3357f6331accbce7b1d8cde2147808756a35a556f5350d77e09` |
+| `kingai_tunerpro_map_editor-1.2.0rc1.tar.gz` | `8b166d68c7acd8a2e18e59c3d6173687067ad528a1b1718613ada180c616bd25` |
+| `kingai_tunerpro_xdf-3.7.5rc1-py3-none-any.whl` | `10d695ab3e9b46773286f44267f01e285e8a9e4dada5fe1c1a31b79d3e238c3c` |
+| `kingai-editor-1.2.0rc1-offline.zip` | `738f3ef1be66742d70d382b84be66762c3374226971abd24b3766eba000fed02` |
+
+The first artifact attempt was rejected for CRLF conversion relative to Git
+blobs, despite matching logical source. Its files were preserved separately.
+The passing artifacts came from an archive created with invocation-local
+`core.autocrlf=false` and `core.eol=lf`; no persistent Git setting was changed.
+The initial Linux ensurepip setup failure was also retained, not counted as
+a passing test run.
 
 No private definitions, customer files, original firmware, native TunerPro
 session, ECU connection, checksum repair or flashing was used. Existing
