@@ -101,7 +101,9 @@ kingai-map-editor edit --xdf definition.xdf --bin original.bin --map "Example ta
 kingai-map-editor edit-flag --xdf definition.xdf --bin original.bin --name "Example flag" --state set --autosave --output-dir output
 ```
 
-Rows and columns are **1-based**. `--raw` chooses an integer raw target; it **does not bypass** the supported-width, signedness, range, storage-type, stride, equation-scope or output-protection checks. Engineering values may quantize to the nearest representable integer; inspect the redecoded result and exact changed bytes. Only use a verified cell/value and a disposable file.
+Rows and columns are **1-based**. `--raw` requires an integer raw target; fractional raw inputs are rejected, not silently rounded. It **does not bypass** the supported-width, signedness, range, storage-type, stride, equation-scope or output-protection checks. Engineering values may quantize through the proven inverse, using ties-to-even rounding; a result is refused if a neighboring raw value decodes closer to the requested value or the conversion cannot distinguish adjacent raw values. This is a local numerical check, not proof of global monotonicity or native TunerPro rounding parity. Inspect the redecoded result and exact changed bytes. Only use a verified cell/value and a disposable file.
+
+Table range edits revalidate every selected cell against the completed staged image at full precision. If a later write changes an earlier cell's conversion dependency, the operation is refused before saving and its in-memory changes are rolled back. This protects one range operation; it does not enable the disabled multi-operation `batch` workflow.
 
 Each successful edit creates a new timestamped BIN plus a project-owned text `.log` and a separate `_detailed.csv`; existing outputs and source files are not overwritten. The text log **resembles TunerPro's presentation**, but is explicitly identified in the file as a KingAI log, **not a native TunerPro log**. The detailed CSV has these columns:
 
