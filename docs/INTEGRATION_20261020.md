@@ -73,7 +73,9 @@ python -m build
 python -m pip install --no-deps dist/kingai_tunerpro_map_editor-1.2.0rc1-py3-none-any.whl
 ```
 
-For installed validation, copy only `test_*.py` into a new directory outside both checkouts, clear `PYTHONPATH`, then run:
+For installed validation, copy `test_*.py` and the BMW guide used by the
+documentation-contract tests into a new directory outside both checkouts,
+clear `PYTHONPATH`, then run:
 
 ```console
 python -I -m pytest --import-mode=importlib -q -ra --basetemp="../installed test temp/final"
@@ -88,3 +90,15 @@ Record actual Python/platform, dependency SHA, wheel hashes, import locations, e
 Pre-artifact source execution on Windows, Python 3.13 against the exact frozen exporter commit completed **235 passed, 17 skipped** in 53.29 seconds; its canonical Git-archive replay also completed **235 passed, 17 skipped**. These include nine offline-bundle cases, real CLI calls from a directory with spaces, guarded fixture snapshot/mismatch refusal, and preserved input hashes. An additional missing-venv error regression and explicit environment-availability skip were then added. The dependency source tree had no diff from the pinned commit. The final revision's canonical source, installed-wheel and real portable-asset results/hashes are supplied in the release qualification receipt after artifact execution. These are local execution results, not hosted Windows/Linux/Python-matrix results.
 
 The 17 preliminary skips are unavailable privately held exact-image MS42/MS43/VY and raw-patch integration fixtures. They are not passing corpus results. The known MS42 linked-axis, MS43 duplicate-ID, MS45 virtual/Z-less and VY malformed-equation cases also require permissioned exact-input replay and native comparison before stable compatibility claims. No native GUI, controller, vehicle, live trading or hardware operation was performed.
+
+## Continued review
+
+The preserved integration was resumed in a separate worktree. The BMW guide's
+edit example now uses the required `--autosave` flag, disabled `port` is no
+longer described as operational, and two artifacts awaiting native parity use
+`CLI_CHECKED` rather than the guide's stronger `STATIC_PROVED` grade. A new
+documentation-contract regression parses all nine current CLI examples without
+performing I/O and checks those evidence boundaries. The installed-package CI
+step stages the guide alongside its tests. The continued Windows Python 3.13
+source run completed **238 passed, 17 skipped**; package/platform results remain
+separate until actually executed.

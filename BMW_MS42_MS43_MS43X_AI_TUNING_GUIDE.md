@@ -128,7 +128,7 @@ python cli_map_editor.py show-scalar --xdf <exact.xdf> --bin <parent.bin> --name
 After human approval, create one bounded candidate and verify it:
 
 ```powershell
-python cli_map_editor.py edit --xdf <exact.xdf> --bin <parent.bin> --map "<exact table title>" --rows <1-based rows> --cols <1-based cols> --value <approved value> --save --output-dir <candidate-dir>
+python cli_map_editor.py edit --xdf <exact.xdf> --bin <parent.bin> --map "<exact table title>" --rows <1-based rows> --cols <1-based cols> --value <approved value> --autosave --output-dir <candidate-dir>
 python cli_map_editor.py diff --bin-a <parent.bin> --bin-b <candidate.bin>
 python cli_map_editor.py preflight --xdf <exact.xdf> --bin <candidate.bin>
 python cli_map_editor.py export --xdf <exact.xdf> --bin <candidate.bin> --output-dir <candidate-audit-dir>
@@ -182,7 +182,7 @@ preserved. The pre-checksum CLI output is
 Exact 0110C6 CAL-CRC repair changes only `0x4FEE0..0x4FEE1`, giving final
 SHA-256 `BABE46932DEA70FE7796E7441F2C176CC9D009DCA17F3249098CE46AD488E4A6`
 and 418 total parent differences. All three stored CRCs then verify. This is
-`STATIC_PROVED`, not flash approval: it remains an aggressive EU3 request-map
+`CLI_CHECKED`, not flash approval: it remains an aggressive EU3 request-map
 experiment and still needs native TunerPro parity, exact-DME matching,
 recovery, write/readback and logged vehicle tests.
 
@@ -244,8 +244,9 @@ Same OSID is necessary but not sufficient. Compare B25/B28/B30 injector data,
 MAF transfer, displacement/load model, VANOS, torque/throttle, idle, limiters,
 exhaust-temperature/catalyst model, transmission and market configuration.
 Classify every target as exact-copy, resample candidate or manual/code review.
-The CLI `port` command is a byte-producing tool, not an authority that similarly
-named maps are physically equivalent.
+The CLI `port` command is disabled. Cross-ECU analysis must produce a separately
+reviewed transformation plan; similarly named maps are not evidence of physical
+equivalence, and this release does not apply automatic map ports.
 
 ### 6. Ignition/dyno experiment
 
@@ -289,7 +290,9 @@ The hook is covered by the ECU program CRC, but the logger payload at
 `0x60E00-0x60FC7` is outside ECU program-CRC coverage. A valid program CRC
 therefore does not authenticate the payload. Require the complete final-image
 SHA-256 and a matching physical readback before executing it. This is
-`STATIC_PROVED / BENCH_NEXT`, not approved for an on-car flash.
+`CLI_CHECKED / BENCH_NEXT`, not approved for an on-car flash. Native TunerPro
+display/write parity has not been retained for this exact artifact, so the
+`STATIC_PROVED` grade defined above is not claimed.
 
 First bench proof should be one manual 9600-baud transaction: send the complete
 DS2 frame `12 05 0B B0 AC`, verify the `12 49 A0` reply framing, length/XOR and
