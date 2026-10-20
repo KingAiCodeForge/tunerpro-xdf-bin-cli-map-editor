@@ -21,6 +21,8 @@
    export       Snapshot XDF+BIN to an output directory
    port         Disabled pending verified transformations and transactional writes
    preflight    Validate XDF+BIN compatibility before editing
+   validate-fixture  Verify exact BIN/XDF hashes, then run preflight
+   export-fixture    Verify exact pair, preflight, then create a guarded snapshot
    diff         Show byte-level diff, optionally attributed through a TunerPro XDF
    apply-raw-patch   Apply an exact-hash, reversible raw-byte patch manifest
    verify-raw-patch  Verify and stage a raw-byte patch entirely in memory
@@ -36,6 +38,7 @@ import argparse
 import csv
 import hashlib
 import json
+import hashlib
 import io
 import math
 import os
@@ -69,7 +72,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1191,6 +1194,127 @@ def cmd_port(args):
     return 1
 
 
+
+def _sha256_file(path: str | Path) -> str:
+    """Return lowercase SHA-256 for an exact on-disk artifact."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _load_exact_pair_fixture(path: str | Path, target_id: str) -> Dict[str, Any]:
+    """Load one strict KingAI exact-pair fixture by target id.
+
+    Supported inputs:
+      - kingai.exact-pair-fixture-set.v1
+      - kingai.exact-bin-xdf-fixture.v1
+
+    The fixture is identity/preflight evidence only. It never authorises writes.
+    """
+    with open(path, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+
+    schema = obj.get('schema')
+    if schema == 'kingai.exact-pair-fixture-set.v1':
+        fixtures = obj.get('fixtures')
+        if not isinstance(fixtures, list):
+            raise ValueError('fixture set has no fixtures list')
+        matches = [x for x in fixtures if isinstance(x, dict) and x.get('target_id') == target_id]
+        if len(matches) != 1:
+            raise ValueError(
+                f"target_id {target_id!r} matched {len(matches)} fixture(s); expected exactly one"
+            )
+        fixture = matches[0]
+    elif schema == 'kingai.exact-bin-xdf-fixture.v1':
+        fixture = obj
+        if fixture.get('target_id') != target_id:
+            raise ValueError(
+                f"fixture target_id {fixture.get('target_id')!r} does not match {target_id!r}"
+            )
+    else:
+        raise ValueError(f'unsupported exact-pair fixture schema: {schema!r}')
+
+    for section in ('bin', 'xdf'):
+        value = fixture.get(section)
+        if not isinstance(value, dict):
+            raise ValueError(f'fixture missing {section} object')
+        digest = str(value.get('sha256') or '').strip().lower()
+        if not re.fullmatch(r'[0-9a-f]{64}', digest):
+            raise ValueError(f'fixture {section}.sha256 must be exactly 64 hex characters')
+    size = fixture['bin'].get('size')
+    if not isinstance(size, int) or size <= 0:
+        raise ValueError('fixture bin.size must be a positive integer')
+    return fixture
+
+
+def cmd_validate_fixture(args):
+    """Verify an exact BIN/XDF fixture, then run the normal read-only preflight."""
+    try:
+        fixture = _load_exact_pair_fixture(args.fixture, args.target_id)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"FAIL: Invalid exact-pair fixture: {exc}")
+        return 1
+
+    bin_path = Path(args.bin)
+    xdf_path = Path(args.xdf)
+    try:
+        bin_size = bin_path.stat().st_size
+        bin_hash = _sha256_file(bin_path)
+        xdf_hash = _sha256_file(xdf_path)
+    except OSError as exc:
+        print(f"FAIL: Cannot read exact-pair input: {exc}")
+        return 1
+
+    expected_bin = fixture['bin']
+    expected_xdf = fixture['xdf']
+    failures = []
+    if bin_size != expected_bin['size']:
+        failures.append(
+            f"BIN size mismatch: got {bin_size}, expected {expected_bin['size']}"
+        )
+    if bin_hash.lower() != str(expected_bin['sha256']).lower():
+        failures.append(
+            f"BIN SHA-256 mismatch: got {bin_hash}, expected {expected_bin['sha256']}"
+        )
+    if xdf_hash.lower() != str(expected_xdf['sha256']).lower():
+        failures.append(
+            f"XDF SHA-256 mismatch: got {xdf_hash}, expected {expected_xdf['sha256']}"
+        )
+
+    print(f"\n{'='*60}")
+    print(f"EXACT-PAIR FIXTURE: {args.target_id}")
+    print(f"{'='*60}")
+    print(f"  BIN: {bin_path.name}")
+    print(f"  BIN SHA-256: {bin_hash}")
+    print(f"  XDF: {xdf_path.name}")
+    print(f"  XDF SHA-256: {xdf_hash}")
+
+    if failures:
+        print(f"\n  FAIL ({len(failures)} identity mismatch(es)):")
+        for failure in failures:
+            print(f"    ! {failure}")
+        print("\n  Preflight was NOT run because the exact-pair identity contract failed.\n")
+        return 1
+
+    print("\n  Exact hashes and BIN size: MATCH")
+    print("  Running normal XDF+BIN preflight next.")
+    # cmd_preflight is read-only and is the existing CLI compatibility gate.
+    return cmd_preflight(args)
+
+
+
+
+def cmd_export_fixture(args):
+    """Verify exact-pair identity and preflight before using the existing snapshot exporter."""
+    if cmd_validate_fixture(args) != 0:
+        print("FAIL: Fixture export blocked because exact-pair validation/preflight failed.")
+        return 1
+    return cmd_export(args)
+
+
+
 def cmd_preflight(args):
     """Validate XDF+BIN compatibility."""
     session = XDFBinSession(args.xdf, args.bin)
@@ -1844,6 +1968,29 @@ Examples:
     p_pre.add_argument('--xdf', required=True)
     p_pre.add_argument('--bin', required=True)
     p_pre.set_defaults(func=cmd_preflight)
+
+    # ─── validate-fixture ────────────────────────────────────────────────
+    p_fixture = sp.add_parser(
+        'validate-fixture',
+        help='Verify exact BIN/XDF hashes from a KingAI fixture, then run preflight',
+    )
+    p_fixture.add_argument('--fixture', required=True, help='Exact-pair fixture JSON')
+    p_fixture.add_argument('--target-id', required=True, help='Fixture target_id to select')
+    p_fixture.add_argument('--xdf', required=True, help='Exact XDF to verify')
+    p_fixture.add_argument('--bin', required=True, help='Exact BIN to verify')
+    p_fixture.set_defaults(func=cmd_validate_fixture)
+
+    # ─── export-fixture ─────────────────────────────────────────────────
+    p_export_fixture = sp.add_parser(
+        'export-fixture',
+        help='Verify exact-pair fixture and preflight before creating a snapshot',
+    )
+    p_export_fixture.add_argument('--fixture', required=True, help='Exact-pair fixture JSON')
+    p_export_fixture.add_argument('--target-id', required=True, help='Fixture target_id to select')
+    p_export_fixture.add_argument('--xdf', required=True, help='Exact XDF to verify/export')
+    p_export_fixture.add_argument('--bin', required=True, help='Exact BIN to verify/export')
+    p_export_fixture.add_argument('--output-dir', required=True, help='Parent directory for guarded snapshot')
+    p_export_fixture.set_defaults(func=cmd_export_fixture)
 
     # ─── diff ────────────────────────────────────────────────────────────
     p_diff = sp.add_parser('diff', help='Byte-level diff, optionally attributed through a TunerPro XDF')
