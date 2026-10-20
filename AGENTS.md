@@ -39,8 +39,9 @@ the exact software identity and independent evidence.
 8. Do not upload customer files, proprietary definitions or datalogs to a
    third-party service without the file owner's authorisation.
 9. Do not use disabled `batch`, `port`, or standalone `save` commands.
-   Do not assume nonlinear inverse equations, floats, unsupported layouts
-   or scoped math writes are supported.
+   Engineering inverses are limited to proven affine and narrow `K/X` forms.
+   Other nonlinear inverses, floats, unsupported layouts and scoped math
+   writes fail closed; do not bypass those restrictions.
 
 ## Installation and inspection
 
