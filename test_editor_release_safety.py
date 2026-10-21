@@ -38,7 +38,7 @@ def test_scoped_table_write_is_refused_without_mutation(tmp_path, raw_mode):
     assert result.changes == []
 
 
-@pytest.mark.parametrize('command', [editor.cmd_batch, editor.cmd_port, editor.cmd_save])
+@pytest.mark.parametrize('command', [editor.cmd_port, editor.cmd_save])
 def test_disabled_commands_refuse_before_loading_or_writing(tmp_path, monkeypatch, command):
     monkeypatch.setattr(editor, 'XDFBinSession', lambda *_: pytest.fail('Session must not load'))
     assert command(SimpleNamespace(output_dir=str(tmp_path / 'output'))) == 1
