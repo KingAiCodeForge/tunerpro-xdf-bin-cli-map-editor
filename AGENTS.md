@@ -103,6 +103,13 @@ check. Validate representative, permissioned real XDF/BIN pairs against native
 TunerPro before any compatibility or release claims. No private firmware,
 customer data or proprietary XDFs should be committed to this repository.
 
+If hosted Actions are unavailable, run source tests directly on a terminal
+with Python and pytest. For an offline pinned-Exporter wheel, use
+run_offline_editor_qualification.py, pass an independently checked wheel hash
+and keep the output folder private/outside the Git repository. The runner
+does not prove the wheel's source commit by inspection of its metadata; see
+docs/BATCH_HARDENING_OFFLINE_20261022.md.
+
 The README on the checked-out branch governs supported commands. The
 transactional batch feature is an unreleased candidate, not part of the
 previous published rc2 package. Later historical planning notes do not
