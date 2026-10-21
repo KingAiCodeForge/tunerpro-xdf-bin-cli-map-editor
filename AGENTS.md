@@ -27,9 +27,10 @@ the exact software identity and independent evidence.
    change its addresses, or edit program code merely to force an operation.
 4. Show the exact map or scalar title, current converted values, units,
    axes and any uncertainty before proposing an edit.
-5. Make a file write only when the user explicitly specifies an exact supported
-   object and desired value and approves a reviewable change. Write one
-   supported operation to a new output file using `--autosave --output-dir`.
+5. Make a file write only when the user explicitly specifies named supported
+   objects and desired values and approves a reviewable change. Single edits
+   and multi-object CSV `batch` plans are supported: run a read-only batch
+   preview first, then publish one new BIN using `--autosave --output-dir`.
 6. Reload the output, run preflight where applicable and compare before and
    after BINs. Confirm the output size, hashes, expected changed bytes and
    audit logs. Report unexpected or unexplained differences.
@@ -38,8 +39,10 @@ the exact software identity and independent evidence.
    testing are separate responsibilities.
 8. Do not upload customer files, proprietary definitions or datalogs to a
    third-party service without the file owner's authorisation.
-9. Do not use disabled `batch`, `port`, or standalone `save` commands.
-   Engineering inverses are limited to proven affine and narrow `K/X` forms.
+9. Do not use disabled `port` or standalone `save` commands. CSV `batch`
+   stages multiple edits, detects byte conflicts and validates every edited
+   object against the final image before saving. Engineering inverses remain
+   limited to proven affine and narrow `K/X` forms.
    Other nonlinear inverses, floats, unsupported layouts and scoped math
    writes fail closed; do not bypass those restrictions.
 
@@ -55,13 +58,14 @@ kingai-map-editor list-maps --xdf definition.xdf --bin original.bin
 kingai-map-editor show-map --xdf definition.xdf --bin original.bin --map "Exact table title"
 kingai-map-editor show-scalar --xdf definition.xdf --bin original.bin --name "Exact scalar title"
 kingai-map-editor export --xdf definition.xdf --bin original.bin --output-dir inspection
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv reviewed-edits.csv
 ```
 
 All filenames and titles above are placeholders. The tool must be executed
 in an environment with terminal and filesystem access. Merely uploading the
 source ZIP into a chat does not provide execution.
 
-For **a separately approved scalar edit only**, where its XDF structure
+For **a separately approved scalar edit**, where its XDF structure
 and storage meet the supported constraints:
 
 ```console
@@ -90,5 +94,7 @@ check. Validate representative, permissioned real XDF/BIN pairs against native
 TunerPro before any compatibility or release claims. No private firmware,
 customer data or proprietary XDFs should be committed to this repository.
 
-The current README release boundary governs supported commands. Later
-historical planning sections do not override it.
+The README on the checked-out branch governs supported commands. The
+transactional batch feature is an unreleased candidate, not part of the
+previous published rc2 package. Later historical planning notes do not
+supersede verified command status.
