@@ -102,7 +102,7 @@ def test_json_plan_hash_mutation_rejected(tmp_path):
 
 @pytest.mark.parametrize('duplicate', [
     '"schema": "kingai.xdf-batch-plan.v1",',
-    '"source_bin_sha256": "0000000000000000000000000000000000000000000000000000000000000000",',
+    '"source_bin_sha256": "'+'0'*64+'",',
 ])
 def test_json_duplicate_top_level_key_is_rejected(tmp_path, duplicate):
     args, origin, plan = make_plan(tmp_path,[{'type':'scalar','map':'MAP Linear','value':5}])
