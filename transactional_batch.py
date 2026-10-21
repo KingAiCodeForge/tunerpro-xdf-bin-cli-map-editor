@@ -17,6 +17,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 from batch_plan_snapshot import snapshot_plan
+from batch_readback import decoded_table_cell
 
 
 ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address', 'flag_mask'}
@@ -193,13 +194,7 @@ def read_json_plan(json_path: str, default_map: str | None = None):
 def _view_value(session, kind, item, row=0, col=0, raw=None):
     """Re-evaluate a single cell at full precision without decoding a whole map."""
     if kind == 'table':
-        z = item['axes']['z']
-        variables = session._current_variables(z, item, row - 1, col - 1)
-        result, _ = session.exporter.evaluate_math(z.get('equation', ''), raw,
-                                                  linked_vars=variables)
-        if result is None:
-            raise ValueError(f"Cannot re-evaluate table {item['title']!r}")
-        return result
+        return decoded_table_cell(session, item, row, col, raw)
     if kind == 'scalar':
         return session.read_scalar_value(item)[1]
     return session.read_flag_state(item)[1]
