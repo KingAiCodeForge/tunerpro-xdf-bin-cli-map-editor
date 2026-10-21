@@ -146,11 +146,16 @@ kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv 
 
 # Optional exact-input pinning for repeatable AI operations.
 kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv --expected-bin-sha256 SHA256_OF_BIN --expected-xdf-sha256 SHA256_OF_XDF --autosave --output-dir reviewed
+
+# Emit one machine-readable JSON result, including every changed byte and item.
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv --json
 ~~~
 
 The CSV uses type = table, scalar or flag; map is the title shown by list-maps, value is the intended decoded value (or set/clear for a flag), and raw chooses an explicitly integer raw storage value for supported table/scalar structures. Rows and columns are 1-based; ranges such as 2-5 are inclusive. Non-table rows leave row/col blank. A map,row,col,value CSV is accepted with type=table and raw=false by default. The optional --default-map fills absent titles.
 
 The command parses the entire plan before opening a mutable session, stages operations in CSV order, prohibits conflicting writes to the same byte (two flags may use disjoint bit masks), and rejects a later operation that changes an earlier edited object's decoded value or stored raw bits. On any validation failure, it rolls back the in-memory session and publishes **no** new BIN. Before publishing, the original BIN/XDF hashes are rechecked, and saved bytes are compared to the validated image. This is **in-memory edit atomicity**, not a crash-proof three-file filesystem transaction or a substitute for ECU checksum repair.
+
+With `--json`, stdout contains a `kingai.xdf-batch.v1` object identifying the two input hashes, proposed output hash, per-object writes, every changed byte and saved paths (or `null` on preview). It is intended for agent consumption; redirect stdout to a file if persistence is required.
 
 Raw mode does **not** bypass unsupported storage types, noncontiguous layouts or XDF math scope guards. Successful editing proves neither active firmware control nor flash readiness. Review the produced BIN with diff, independently verify the specific software ID and perform checksum/hardware validation separately. Tests from this branch must be executed against the pinned Exporter before release; private customer files must not be added to the repository.
 
