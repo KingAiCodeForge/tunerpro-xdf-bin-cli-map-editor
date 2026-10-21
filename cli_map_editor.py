@@ -2060,6 +2060,7 @@ Examples:
     p_batch.add_argument('--bin', required=True, help='Original BIN; never modified')
     p_batch.add_argument('--csv', required=True, help='UTF-8 CSV: type,map,row,col,value,raw')
     p_batch.add_argument('--default-map', default=None, help='Fallback title for CSV rows without map')
+    p_batch.add_argument('--json', action='store_true', help='Emit structured JSON receipt to stdout')
     p_batch.add_argument('--expected-bin-sha256', help='Optional exact original BIN hash for automated plans')
     p_batch.add_argument('--expected-xdf-sha256', help='Optional exact original XDF hash for automated plans')
     p_batch.add_argument('--autosave', '--save', dest='autosave', action='store_true',
