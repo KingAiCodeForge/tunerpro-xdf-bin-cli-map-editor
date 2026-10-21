@@ -79,7 +79,8 @@ Batch plans may include exact XDF unique IDs, XDF storage addresses and
 expected old raw values to prevent ambiguous or stale edits. The JSON plan
 requires exact BIN/XDF SHA-256 values and emits a structured error when
 --json is requested. Record the plan SHA-256 too. The pinned Exporter does
-not expose flag unique IDs; flags may be selected by title and address.
+not expose flag unique IDs; flags may be selected by title, address and
+exact bit mask (flag_mask) when titles and byte addresses collide.
 
 Discover the actual output filename from the CLI response; do not assume it
 matches the placeholder. Review rounding, quantisation, offsets, log files
