@@ -262,6 +262,14 @@ python -m pip install ".[test]"
 python -m pytest -q
 ```
 
+**No-GitHub-Actions qualification path:** When you have a trusted local Exporter 3.7.5rc1 wheel and pytest, run the entire suite directly with the source-aware offline runner:
+
+~~~console
+python run_offline_editor_qualification.py --repo . --exporter-wheel /trusted/path/kingai_tunerpro_xdf-3.7.5rc1-py3-none-any.whl --report-dir /private/results/editor-qualification-01 --expected-wheel-sha256 VERIFIED_SHA256
+~~~
+
+The runner does not install from the internet. It checks wheel metadata and optional SHA-256 and preserves a local pytest transcript and JSON receipt. It does not independently certify the wheel's source commit or any ECU image. See [the executed 22 October hardening receipt](docs/BATCH_HARDENING_OFFLINE_20261022.md). Exactly **40 additional isolated tests passed** locally for plan snapshot hashes, staged per-cell readback and the synthetic offline runner; the full parser-dependent suite remains unrun here. The draft batch now rejects source/plan mutations on previews and binds its plan hash to the exact bytes parsed.
+
 Keep executable results and failures tied to exact commit and dependency versions. Test a built wheel in an isolated environment outside the source checkout. Preserve golden input snapshots and independently compare supported read/edit behaviour against native TunerPro; do not mistake synthetic test counts for ECU or vehicle proof. Some exact-target fixtures are privately held and are not part of this public repository.
 
 Issues and regression fixtures are welcome for **specific legal XDF/BIN combinations**; remove VINs, immobiliser secrets and customer data before publishing.
