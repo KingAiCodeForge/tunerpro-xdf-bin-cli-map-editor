@@ -25,7 +25,7 @@ def decoded_table_cell(session, item: dict, row: int, col: int, raw: int | float
         if not callable(getattr(exporter, 'table_context', None)):
             raise ValueError('Exporter cell selector lacks a table context resolver')
         original = exporter.bin_data
-        exporter.bin_data = bytes(session.bin_data)
+        exporter.bin_data = session.bin_data  # struct.unpack_from reads bytearray without copying a whole BIN
         try:
             selector = exporter._cell_equation_selector(z)
             equation, linked_vars, math_element = selector(row - 1, col - 1)
