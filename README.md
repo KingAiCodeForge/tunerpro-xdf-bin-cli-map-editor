@@ -125,39 +125,64 @@ Use the **actual output filename** printed by the edit command in the subsequent
 
 ## Multiple XDF edits in one transaction (candidate)
 
-This branch enables batch to edit several **named XDF items** into **one staged BIN**. This removes the one-edit-per-file workflow. An AI agent can generate the CSV after reading the exact BIN/XDF; it must not guess object titles, software identities or desired calibration values.
+This unreleased branch enables a terminal-capable AI agent to change **several XDF-defined tables, scalars and flags in one new BIN**, instead of chaining one output file per edit. CSV and structured JSON plans share the same typed write engine. The original XDF and BIN are never overwritten. These are file edits, not ECU flashing or evidence that an XDF is correct for an OSID.
 
-For example, create edits.csv (titles and numbers below are **illustrative**, not a real tune):
+**First inspect:** use preflight, list-maps, show-map/show-scalar and diff on the exact pair; check which table and axis addresses/unique IDs are actually present. The new list-maps output includes table/scalar XDF uniqueid where supplied by the parser.
+
+### CSV plans
 
 ~~~csv
-type,map,row,col,value,raw
-scalar,Example scalar,,,12.5,false
-table,Example table,1-3,2-4,25.0,false
-table,Example table,4,1,120,true
-flag,Example flag,,,set,false
+type,map,row,col,value,raw,expected_raw,uniqueid,address
+scalar,Example scalar,,,12.5,false,10,0x1,0x40
+table,Example table,1-3,2-4,25.0,false,,0x2,0x80
+table,Example table,4,1,120,true,,0x2,0x80
+flag,Example flag,,,set,false,0x00,,0xA0
 ~~~
+
+All values, titles, unique IDs and addresses above are **illustrative**; they are not a tune. Columns type (table/scalar/flag), map, row, col, value and raw retain their earlier behaviour. A four-column map,row,col,value CSV still defaults to tables and converted values. Rows and columns are 1-based and inclusive ranges such as 2-5 remain supported.
+
+New optional fields:
+
+- **expected_raw:** exact stored old integer for each selected cell, scalar, or containing 8-bit flag byte. The comparison sees preceding edits in plan order. A mismatch aborts the entire plan; it does not silently proceed. For ranges, every cell must meet the same supplied expected raw value.
+- **uniqueid:** exact string from the XDF, for distinguishing tables and scalars with duplicate titles. The pinned Exporter does not expose flag unique IDs; use the flag's title plus address instead.
+- **address:** XDF storage address, not physical file offset. For tables this selects the Z-body address. It can be combined with uniqueid; both must match. Ambiguous or missing targets are errors, not first-match selections.
+
+### Machine-readable JSON plans
+
+JSON plans are useful for agent-generated multi-map changes. The schema is kingai.xdf-batch-plan.v1. The two 64-hex-character source hashes are mandatory and must match the files actually read. Replace the illustrative all-zero hashes with real SHA-256 values before executing.
+
+~~~json
+{
+  "schema": "kingai.xdf-batch-plan.v1",
+  "source_bin_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "xdf_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "operations": [
+    {"type": "scalar", "map": "Example scalar", "uniqueid": "0x1", "value": 12.5, "expected_raw": 10},
+    {"type": "table", "map": "Example table", "row": 1, "col": "1-3", "value": 25.0},
+    {"type": "flag", "map": "Example flag", "address": "0xA0", "value": "set"}
+  ]
+}
+~~~
+
+The JSON parser rejects malformed schemas, unknown fields, duplicate keys, nonfinite numbers, unexpected value types and mixed/duplicate source specifications. Both JSON and CSV use the same per-item conversion, byte conflict and final-image consistency checks.
 
 ~~~console
-# Read-only by default: stages every edit in memory and prints a proposed BIN hash.
+# Read-only previews first.
 kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --plan-json reviewed-plan.json --json
 
-# Publish one NEW BIN plus a KingAI .log and detailed audit .csv.
-kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv --autosave --output-dir reviewed
+# Publish one NEW BIN and its two audit files only for an approved exact plan.
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --plan-json reviewed-plan.json --autosave --output-dir reviewed --json
 
-# Optional exact-input pinning for repeatable AI operations.
+# CSV can also pin the exact input images explicitly.
 kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv --expected-bin-sha256 SHA256_OF_BIN --expected-xdf-sha256 SHA256_OF_XDF --autosave --output-dir reviewed
-
-# Emit one machine-readable JSON result, including every changed byte and item.
-kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv --json
 ~~~
 
-The CSV uses type = table, scalar or flag; map is the title shown by list-maps, value is the intended decoded value (or set/clear for a flag), and raw chooses an explicitly integer raw storage value for supported table/scalar structures. Rows and columns are 1-based; ranges such as 2-5 are inclusive. Non-table rows leave row/col blank. A map,row,col,value CSV is accepted with type=table and raw=false by default. The optional --default-map fills absent titles.
+The --json switch emits kingai.xdf-batch.v1 on success, identifying input and plan hashes, typed modifications, the proposed output hash, every changed byte and output paths (or null for preview). A handled batch error emits kingai.xdf-batch-error.v1 with status=error and no claimed output.
 
-The command parses the entire plan before opening a mutable session, stages operations in CSV order, prohibits conflicting writes to the same byte (two flags may use disjoint bit masks), and rejects a later operation that changes an earlier edited object's decoded value or stored raw bits. On any validation failure, it rolls back the in-memory session and publishes **no** new BIN. Before publishing, the original BIN/XDF hashes are rechecked, and saved bytes are compared to the validated image. This is **in-memory edit atomicity**, not a crash-proof three-file filesystem transaction or a substitute for ECU checksum repair.
+Batch staging detects conflicting writes (including overlapping table aliases), while independent flag masks may share a byte. It checks the **complete flag mask**, not only a boolean set/clear interpretation, and verifies final-image decoded values, raw values and claimed modified bytes. Source BIN, XDF and plan hashes are rechecked before publication. An error during staging rolls back the in-memory plan and produces no new BIN.
 
-With `--json`, stdout contains a `kingai.xdf-batch.v1` object identifying the two input hashes, proposed output hash, per-object writes, every changed byte and saved paths (or `null` on preview). It is intended for agent consumption; redirect stdout to a file if persistence is required.
-
-Raw mode does **not** bypass unsupported storage types, noncontiguous layouts or XDF math scope guards. Successful editing proves neither active firmware control nor flash readiness. Review the produced BIN with diff, independently verify the specific software ID and perform checksum/hardware validation separately. Tests from this branch must be executed against the pinned Exporter before release; private customer files must not be added to the repository.
+The existing exclusive save stages a new BIN, .log and _detailed.csv, but is **not a crash-proof three-file transaction**. An I/O interruption or post-publication verification failure must be investigated rather than described as successful. XDF conversions, supported integer storage, raw write bounds and table geometry still govern what can be written; unsupported conversion/stride/float/scoped-math operations fail closed. Review the resulting BIN independently, address ECU-specific checksum/signature requirements and validate firmware/hardware separately. No customer calibration files are bundled.
 
 ## Compare and export
 
