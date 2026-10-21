@@ -2062,7 +2062,7 @@ Examples:
     p_batch.add_argument('--xdf', required=True, help='XDF used for all named edits')
     p_batch.add_argument('--bin', required=True, help='Original BIN; never modified')
     p_plan = p_batch.add_mutually_exclusive_group(required=True)
-    p_plan.add_argument('--csv', help='CSV: type,map,row,col,value,raw,expected_raw,uniqueid,address')
+    p_plan.add_argument('--csv', help='CSV: type,map,row,col,value,raw,expected_raw,uniqueid,address,flag_mask')
     p_plan.add_argument('--plan-json', help='Hash-pinned kingai.xdf-batch-plan.v1 JSON operation list')
     p_batch.add_argument('--default-map', default=None, help='Fallback title for CSV rows without map')
     p_batch.add_argument('--json', action='store_true', help='Emit structured JSON receipt to stdout')
