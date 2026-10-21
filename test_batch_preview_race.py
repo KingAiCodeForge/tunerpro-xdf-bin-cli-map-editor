@@ -23,6 +23,6 @@ def test_preview_rejects_mutated_source_even_without_autosave(tmp_path, monkeypa
     with pytest.raises(ValueError, match='changed while staging'):
         batch.run_batch(args, FakeSession, ranges, state)
     assert not (tmp_path/'out').exists()
-    assert FakeSession.last.changes != []  # staged in memory but never published
+    assert FakeSession.last.changes == []  # in-memory edits rolled back
     assert Path(args.bin).read_bytes() == (previous if changed_source != 'bin'
                                          else previous + b'externally-updated')
