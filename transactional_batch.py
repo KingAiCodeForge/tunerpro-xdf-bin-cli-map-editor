@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw'}
+ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address'}
 KINDS = {'table', 'scalar', 'flag'}
 
 
@@ -99,9 +99,20 @@ def read_plan(csv_path: str, default_map: str | None = None) -> list[dict[str, A
                     expected_raw = int(expected_text, 0)
                 except ValueError as exc:
                     raise ValueError(f'CSV row {row_number}: expected_raw must be a signed integer') from exc
+            uniqueid = (row.get('uniqueid') or '').strip() or None
+            address_text = (row.get('address') or '').strip()
+            address = None
+            if address_text:
+                try:
+                    address = int(address_text, 0)
+                except ValueError as exc:
+                    raise ValueError(f'CSV row {row_number}: address must be an XDF integer address') from exc
+                if address < 0:
+                    raise ValueError(f'CSV row {row_number}: address cannot be negative')
             result.append({'line': row_number, 'type': kind, 'name': name,
                            'row': r, 'col': c, 'value': value, 'raw': raw,
-                           'expected_raw': expected_raw})
+                           'expected_raw': expected_raw, 'uniqueid': uniqueid,
+                           'address': address})
     if not result:
         raise ValueError('Edit CSV contains no operations')
     return result
@@ -152,13 +163,42 @@ def _check_expected_raw(op: dict, change: dict) -> None:
                          f"expected={expected}, actual={change['old_raw']}")
 
 
+def _select_item(session, op: dict):
+    """Select by title, optionally XDF uniqueid and XDF data address.
+
+    Both selectors are AND constraints. Address is in the XDF's addressing
+    space, not a file offset; no guessing or first-match fallback is allowed.
+    """
+    kind, name = op['type'], op['name']
+    items = {'table': session.tables, 'scalar': session.constants,
+             'flag': session.flags}[kind]
+    matches = [item for item in items if item['title'] == name]
+    if not matches:
+        matches = [item for item in items if item['title'].casefold() == name.casefold()]
+    uniqueid = op.get('uniqueid')
+    if uniqueid is not None:
+        if kind == 'flag':
+            raise ValueError('Flag XDF uniqueid is not exposed by the pinned Exporter; '
+                             'select by title and XDF address instead')
+        matches = [item for item in matches if item.get('uniqueid') == uniqueid]
+    address = op.get('address')
+    if address is not None:
+        matches = [item for item in matches if
+                   (item.get('axes', {}).get('z', {}).get('address') if kind == 'table'
+                    else item.get('address')) == address]
+    if len(matches) > 1:
+        raise ValueError(f"CSV row {op['line']}: ambiguous {kind} title {name!r}; "
+                         'supply its XDF uniqueid or data address')
+    if not matches:
+        raise ValueError(f"CSV row {op['line']}: {kind} {name!r} not found with the supplied selectors")
+    return matches[0]
+
+
 def _stage_item(session, op: dict, parse_range, parse_flag_state,
                 claims: dict, expectations: list, touched_tables: set):
     kind, name = op['type'], op['name']
     if kind == 'table':
-        item = session.find_table(name)
-        if item is None:
-            raise ValueError(f"CSV row {op['line']}: table {name!r} not found")
+        item = _select_item(session, op)
         rows, cols = session.get_table_dimensions(item)
         row_range, col_range = parse_range(op['row']), parse_range(op['col'])
         # Validate endpoints before expansion, so a typo cannot generate a huge loop.
@@ -176,18 +216,14 @@ def _stage_item(session, op: dict, parse_range, parse_flag_state,
             session.add_table_log_entry(item['title'])
             touched_tables.add(id(item))
     elif kind == 'scalar':
-        item = session.find_constant(name)
-        if item is None:
-            raise ValueError(f"CSV row {op['line']}: scalar {name!r} not found")
+        item = _select_item(session, op)
         change = session.write_scalar(item, op['value'], raw_mode=op['raw'])
         _check_expected_raw(op, change)
         _claim_bytes(change, item, claims)
         expectations.append((kind, item, 0, 0, change,
                              _view_value(session, kind, item)))
     else:
-        item = session.find_flag(name)
-        if item is None:
-            raise ValueError(f"CSV row {op['line']}: flag {name!r} not found")
+        item = _select_item(session, op)
         state = parse_flag_state(op['value'])
         change = session.write_flag(item, state)
         _check_expected_raw(op, change)
