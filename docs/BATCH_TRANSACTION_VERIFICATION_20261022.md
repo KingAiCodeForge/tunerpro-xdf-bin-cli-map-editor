@@ -77,3 +77,18 @@ The container could not resolve github.com and does not have the pinned tunerpro
 ### Release decision
 
 This branch remains an **unreleased draft**. The available evidence proves the standalone batch coordinator against its synthetic test doubles, not native TunerPro compatibility. Before merging/releasing, run the repository suite and isolated installed-wheel smoke on an environment with the exact pinned Exporter, then replay authorized real definition/image pairs. The scripts here did not flash, checksum-repair, or validate an ECU.
+
+
+## Final local follow-up: same-address flags
+
+A subsequent isolated regression batch added exact 8-bit flag_mask selectors for two parsed flags with identical title and XDF storage address but different masks. Selection is constrained by title, optional address and optional flag_mask; ambiguous matches remain errors. The CSV and JSON plan grammars accept flag_mask only for flag records and reject zero, negative, noninteger and over-width masks. The test cases also confirm two disjoint flags can be changed in a single staged operation.
+
+~~~console
+python -m pytest -q test_transactional_batch_unit.py test_batch_hardening.py test_batch_selector.py test_batch_json_plan.py test_batch_flag_mask.py
+.........................................................                [100%]
+57 passed in 0.14s
+~~~
+
+Python 3.13.5, pytest 9.0.2. This is a dependency-free synthetic coordinator result, not a complete installed-package result. The locally tested and committed transactional_batch.py module Git blob SHA is 8f419d1d0a3054a08e0250fecf644e50c4ecaa17. The committed test_batch_flag_mask.py Git blob SHA matches the executed local test file: 374bf48ccfd5b3118a389762a3a2f6bf198e8057.
+
+The integration, checksum, native-display and hardware qualification gaps described above remain unchanged.
