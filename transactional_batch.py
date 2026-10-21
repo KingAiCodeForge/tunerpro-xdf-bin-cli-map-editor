@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import math
 from pathlib import Path
 from typing import Any
@@ -248,19 +249,7 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         raise
     after = bytes(session.bin_data)
     after_hash = hashlib.sha256(after).hexdigest()
-    print(f'XDF SHA-256: {xdf_hash}')
-    print(f'BIN SHA-256: {bin_hash}')
-    print(f'Operations: {len(plan)} CSV rows; {len(expectations)} typed targets; '
-          f'{len(changed)} changed bytes (of {len(before)})')
-    print(f'Proposed BIN SHA-256: {after_hash}')
-    for change in session.changes[:60]:
-        location = (f"[{change['row']},{change['col']}]" if change['type'] == 'table' else '')
-        print(f"  {change['type']} {change['map']}{location}: "
-              f"{change['old_real']} -> {change['new_real']} {change.get('unit', '')} "
-              f"raw {change['old_raw']} -> {change['new_raw']} "
-              f"file {change['file_offset']}")
-    if len(session.changes) > 60:
-        print(f'  ... {len(session.changes) - 60} additional typed changes in audit CSV')
+    bin_out, log_out = None, None
     if autosave:
         if _sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash:
             raise ValueError('Source BIN/XDF changed while staging; refusing to save')
@@ -268,9 +257,41 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         published = Path(bin_out).read_bytes()
         if published != after:
             raise ValueError('Published BIN differs from the validated staged image; treat save as invalid')
-        print(f'Saved new BIN: {bin_out}')
-        print(f'Audit log: {log_out}')
-        print('The saved image has not been checksum-repaired, flashed, or vehicle-validated.')
+
+    if getattr(args, 'json', False):
+        report = {
+            'schema': 'kingai.xdf-batch.v1',
+            'status': 'saved' if autosave else 'dry_run',
+            'source_bin': {'name': Path(args.bin).name, 'size': len(before), 'sha256': bin_hash},
+            'xdf': {'name': Path(args.xdf).name, 'sha256': xdf_hash},
+            'csv_rows': len(plan), 'typed_targets': len(expectations),
+            'changed_byte_count': len(changed),
+            'proposed_bin_sha256': after_hash,
+            'changes': session.changes,
+            'changed_bytes': [{'file_offset': i, 'old_byte': before[i], 'new_byte': after[i]}
+                              for i in changed],
+            'saved_bin': bin_out, 'audit_log': log_out,
+            'checksum_repaired': False, 'vehicle_validated': False,
+        }
+        print(json.dumps(report, indent=2, allow_nan=False))
     else:
-        print('DRY RUN: no BIN or audit files written; use --autosave --output-dir to publish.')
+        print(f'XDF SHA-256: {xdf_hash}')
+        print(f'BIN SHA-256: {bin_hash}')
+        print(f'Operations: {len(plan)} CSV rows; {len(expectations)} typed targets; '
+              f'{len(changed)} changed bytes (of {len(before)})')
+        print(f'Proposed BIN SHA-256: {after_hash}')
+        for change in session.changes[:60]:
+            location = (f"[{change['row']},{change['col']}]" if change['type'] == 'table' else '')
+            print(f"  {change['type']} {change['map']}{location}: "
+                  f"{change['old_real']} -> {change['new_real']} {change.get('unit', '')} "
+                  f"raw {change['old_raw']} -> {change['new_raw']} "
+                  f"file {change['file_offset']}")
+        if len(session.changes) > 60:
+            print(f'  ... {len(session.changes) - 60} additional typed changes in audit CSV')
+        if autosave:
+            print(f'Saved new BIN: {bin_out}')
+            print(f'Audit log: {log_out}')
+            print('The saved image has not been checksum-repaired, flashed, or vehicle-validated.')
+        else:
+            print('DRY RUN: no BIN or audit files written; use --autosave --output-dir to publish.')
     return 0
