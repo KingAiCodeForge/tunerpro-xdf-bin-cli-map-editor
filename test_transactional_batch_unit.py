@@ -179,3 +179,20 @@ def test_flag_writer_cannot_change_unclaimed_bit(tmp_path):
     assert binary.read_bytes()==original
     assert not (tmp_path/'out').exists()
     assert FakeSession.last.changes==[]
+
+
+def test_json_preview_reports_every_changed_byte_without_file_output(tmp_path, capsys):
+    import json
+    args,binary=setup(tmp_path,[['table','Ignition',1,1,40,False],['flag','Feature A','','','set',False]])
+    args.json=True
+    baseline=binary.read_bytes()
+    assert run(args)==0
+    report=json.loads(capsys.readouterr().out)
+    assert report['schema']=='kingai.xdf-batch.v1'
+    assert report['status']=='dry_run'
+    assert report['source_bin']['sha256'] != report['proposed_bin_sha256']
+    assert report['changed_byte_count']==len(report['changed_bytes'])==2
+    assert {record['file_offset'] for record in report['changed_bytes']}=={16,48}
+    assert report['saved_bin'] is None
+    assert binary.read_bytes()==baseline
+    assert not (tmp_path/'out').exists()
