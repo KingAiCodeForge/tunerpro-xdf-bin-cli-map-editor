@@ -987,7 +987,8 @@ def cmd_list_maps(args):
         unit = z.get('unit', '')
         eq = z.get('equation', '') or 'X'
         print(f"  {t['title']}")
-        print(f"    {rows}x{cols}  addr={addr_str}  unit={unit}  eq={eq}")
+        uid = f"  uniqueid={t['uniqueid']}" if t.get('uniqueid') else ""
+        print(f"    {rows}x{cols}  addr={addr_str}{uid}  unit={unit}  eq={eq}")
 
     # Scalars
     print(f"\n{'='*70}")
@@ -1001,7 +1002,8 @@ def cmd_list_maps(args):
         except (EquationError, ValueError, TypeError, KeyError) as exc:
             val_str = f"ERROR ({exc})"
         unit = c.get('unit', '')
-        print(f"  {c['title']}: {val_str} {unit}  [addr={addr}]")
+        uid = f", uniqueid={c['uniqueid']}" if c.get('uniqueid') else ""
+        print(f"  {c['title']}: {val_str} {unit}  [addr={addr}{uid}]")
 
     # Flags
     if session.flags:
@@ -1300,7 +1302,7 @@ def cmd_edit_flag(args):
 
 
 def cmd_batch(args):
-    """Stage and validate a multi-object XDF CSV; optionally publish one audited BIN."""
+    """Stage multi-object CSV/JSON XDF plans; optionally publish one audited BIN."""
     return run_batch(args, XDFBinSession, parse_range, _parse_flag_state)
 
 
@@ -1982,6 +1984,7 @@ Examples:
   %(prog)s edit --xdf def.xdf --bin fw.bin --map "Fuel Map" --rows 1-3 --cols 1-2 --value 12.5 --autosave --output-dir output
   %(prog)s edit-flag --xdf def.xdf --bin fw.bin --name "Enable Feature" --state set --autosave --output-dir output
   %(prog)s preflight --xdf def.xdf --bin fw.bin
+  %(prog)s batch --xdf def.xdf --bin fw.bin --plan-json reviewed-plan.json --json
   %(prog)s diff --bin-a original.bin --bin-b edited.bin
   %(prog)s verify-raw-patch --bin fw.bin --manifest patch.json
   %(prog)s apply-raw-patch --bin fw.bin --manifest patch.json --output patched.bin
@@ -2055,10 +2058,12 @@ Examples:
     p_ef.set_defaults(func=cmd_edit_flag)
 
     # ─── batch ───────────────────────────────────────────────────────────
-    p_batch = sp.add_parser('batch', help='Preview or apply a CSV of XDF table, scalar and flag edits to one new BIN')
+    p_batch = sp.add_parser('batch', help='Preview or apply a CSV/JSON plan of named XDF edits to one new BIN')
     p_batch.add_argument('--xdf', required=True, help='XDF used for all named edits')
     p_batch.add_argument('--bin', required=True, help='Original BIN; never modified')
-    p_batch.add_argument('--csv', required=True, help='UTF-8 CSV: type,map,row,col,value,raw')
+    p_plan = p_batch.add_mutually_exclusive_group(required=True)
+    p_plan.add_argument('--csv', help='CSV: type,map,row,col,value,raw,expected_raw,uniqueid,address')
+    p_plan.add_argument('--plan-json', help='Hash-pinned kingai.xdf-batch-plan.v1 JSON operation list')
     p_batch.add_argument('--default-map', default=None, help='Fallback title for CSV rows without map')
     p_batch.add_argument('--json', action='store_true', help='Emit structured JSON receipt to stdout')
     p_batch.add_argument('--expected-bin-sha256', help='Optional exact original BIN hash for automated plans')
@@ -2175,7 +2180,12 @@ Examples:
     try:
         return args.func(args)
     except Exception as e:
-        print(f"ERROR: {e}")
+        if args.command == 'batch' and getattr(args, 'json', False):
+            print(json.dumps({'schema': 'kingai.xdf-batch-error.v1',
+                              'status': 'error', 'error': str(e),
+                              'saved_bin': None}, allow_nan=False))
+        else:
+            print(f"ERROR: {e}")
         return 1
 
 
