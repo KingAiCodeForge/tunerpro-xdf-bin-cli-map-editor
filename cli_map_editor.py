@@ -384,7 +384,8 @@ class XDFBinSession:
         try:
             context = self.exporter.table_context(table, row, col) if table else None
             actual, _ = self.exporter.evaluate_math(item.get('equation', ''), raw,
-                context, linked_vars=self.exporter.linked_vars_for(item))
+                context, linked_vars=self.exporter.linked_vars_for(item),
+                math_element=item.get('math_element'))
             if not raw_mode and actual != predicted:
                 raise ValueError("Edit changes a conversion dependency; engineering write refused")
             return actual
@@ -435,7 +436,8 @@ class XDFBinSession:
         old_raw = self._read_raw_at(file_offset, size_bits, signed, lsb_first)
         old_real = float(old_raw)
         if equation:
-            calc, _ = self.exporter.evaluate_math(equation, old_raw, linked_vars=z_linked_vars)
+            calc, _ = self.exporter.evaluate_math(equation, old_raw, linked_vars=z_linked_vars,
+                                                  math_element=z.get('math_element'))
             if calc is not None:
                 old_real = calc
 
@@ -461,7 +463,8 @@ class XDFBinSession:
         # Compute written real for log accuracy
         new_real = float(new_raw)
         if equation:
-            calc, _ = self.exporter.evaluate_math(equation, new_raw, linked_vars=z_linked_vars)
+            calc, _ = self.exporter.evaluate_math(equation, new_raw, linked_vars=z_linked_vars,
+                                                  math_element=z.get('math_element'))
             if calc is not None:
                 new_real = calc
 
@@ -500,7 +503,7 @@ class XDFBinSession:
                 z.get('size_bits', 8), z.get('signed', False), z.get('lsb_first', False))
             variables = self._current_variables(z, table, change['row'] - 1, change['col'] - 1)
             value, _ = self.exporter.evaluate_math(z.get('equation', ''), raw,
-                                                  linked_vars=variables)
+                                                  linked_vars=variables, math_element=z.get('math_element'))
             return raw, value
 
         changes, expected = [], []
@@ -552,7 +555,8 @@ class XDFBinSession:
         old_raw = self._read_raw_at(file_offset, size_bits, signed, lsb_first)
         old_real = float(old_raw)
         if equation:
-            calc, _ = self.exporter.evaluate_math(equation, old_raw, linked_vars=linked_vars)
+            calc, _ = self.exporter.evaluate_math(equation, old_raw, linked_vars=linked_vars,
+                                                  math_element=const.get('math_element'))
             if calc is not None:
                 old_real = calc
 
@@ -577,7 +581,8 @@ class XDFBinSession:
         # Compute written real
         new_real = float(new_raw)
         if equation:
-            calc, _ = self.exporter.evaluate_math(equation, new_raw, linked_vars=linked_vars)
+            calc, _ = self.exporter.evaluate_math(equation, new_raw, linked_vars=linked_vars,
+                                                  math_element=const.get('math_element'))
             if calc is not None:
                 new_real = calc
 
@@ -631,7 +636,7 @@ class XDFBinSession:
         """Set or clear one XDF flag while preserving every sibling bit."""
         address = flag['address']
         mask = flag.get('mask', 0x01)
-        if not isinstance(mask, int) or mask <= 0 or mask > 0xFF:
+        if type(mask) is not int or mask <= 0 or mask > 0xFF:
             raise ValueError(f"Flag '{flag['title']}' has invalid mask {mask!r}")
 
         file_offset = self.exporter._xdf_addr_to_file_offset(address)
