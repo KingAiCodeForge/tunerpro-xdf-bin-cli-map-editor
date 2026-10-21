@@ -92,3 +92,16 @@ def test_no_fallback_if_selector_exists_but_broken():
     s,item,exp,old=fixture()
     exp.table_context = None
     with pytest.raises(ValueError): decoded_table_cell(s,item,1,1,1)
+
+
+def test_staged_readback_does_not_copy_large_bin_per_cell():
+    class NoBytes(bytearray):
+        def __bytes__(self):
+            raise AssertionError('Whole-image copy is too expensive per edited cell')
+    s,item,exp,old=fixture()
+    s.bin_data=NoBytes(bytes(2*1024*1024))
+    s.bin_data[4]=9
+    for i in range(200):
+        assert decoded_table_cell(s,item,1,1,3)==3+10+100+9
+    assert exp.bin_data is old
+    assert exp.seen==[record for record in exp.seen]
