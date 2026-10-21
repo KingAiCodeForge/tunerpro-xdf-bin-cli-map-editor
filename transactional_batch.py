@@ -132,8 +132,17 @@ def read_json_plan(json_path: str, default_map: str | None = None):
     def reject_constant(value):
         raise ValueError(f'JSON plan contains nonfinite numeric constant {value!r}')
 
+    def reject_duplicate_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f'Duplicate JSON plan key {key!r}')
+            result[key] = value
+        return result
+
     with open(json_path, 'r', encoding='utf-8-sig') as stream:
-        plan = json.load(stream, parse_constant=reject_constant)
+        plan = json.load(stream, parse_constant=reject_constant,
+                         object_pairs_hook=reject_duplicate_keys)
     if not isinstance(plan, dict) or set(plan) != {
             'schema', 'source_bin_sha256', 'xdf_sha256', 'operations'}:
         raise ValueError('JSON plan requires schema, source_bin_sha256, xdf_sha256, operations only')
