@@ -390,6 +390,11 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
             _stage_item(session, operation, parse_range, parse_flag_state,
                         claims, expectations, touched_tables)
         changed = _verify_final(session, before, claims, expectations)
+        # A preview also describes a specific file snapshot. Keep this check
+        # inside the staging exception boundary so races roll back the session.
+        if (_sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash
+                or _sha256(source_path) != plan_hash):
+            raise ValueError('Source BIN/XDF/plan changed while staging; refusing to report or save')
     except BaseException:
         session.bin_data[:] = before
         del session.changes[counts[0]:]
@@ -397,11 +402,6 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         raise
     after = bytes(session.bin_data)
     after_hash = hashlib.sha256(after).hexdigest()
-    # A preview is also a contract about a specific input snapshot. Refuse to
-    # report it if any source changed during staging, even without --autosave.
-    if (_sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash
-            or _sha256(source_path) != plan_hash):
-        raise ValueError('Source BIN/XDF/plan changed while staging; refusing to report or save')
     bin_out, log_out = None, None
     if autosave:
         bin_out, log_out = session.save_final(output_dir, 'batch')
