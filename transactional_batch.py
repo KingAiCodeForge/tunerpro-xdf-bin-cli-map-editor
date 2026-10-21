@@ -16,6 +16,7 @@ import math
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
+from batch_plan_snapshot import snapshot_plan
 
 
 ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address', 'flag_mask'}
@@ -151,7 +152,9 @@ def read_json_plan(json_path: str, default_map: str | None = None):
             result[key] = value
         return result
 
-    with open(json_path, 'r', encoding='utf-8-sig') as stream:
+    source = (open(json_path, 'r', encoding='utf-8-sig') if isinstance(json_path, (str, Path))
+              else nullcontext(json_path))
+    with source as stream:
         plan = json.load(stream, parse_constant=reject_constant,
                          object_pairs_hook=reject_duplicate_keys)
     if not isinstance(plan, dict) or set(plan) != {
@@ -360,11 +363,15 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         raise ValueError('Supply exactly one batch input: --csv or --plan-json')
     pinned_bin, pinned_xdf = None, None
     source_path = json_path or csv_path
-    if json_path:
-        plan, pinned_bin, pinned_xdf = read_json_plan(json_path, getattr(args, 'default_map', None))
-    else:
-        plan = read_plan(csv_path, getattr(args, 'default_map', None))
-    plan_hash = _sha256(source_path)
+    # Parse exactly the bytes we identify in the receipt. Hashing a reopened
+    # file after parsing can bind operations from plan A to the hash of plan B.
+    plan_bytes, plan_hash = snapshot_plan(source_path)
+    with io.StringIO(plan_bytes.decode('utf-8-sig'), newline='') as plan_stream:
+        if json_path:
+            plan, pinned_bin, pinned_xdf = read_json_plan(
+                plan_stream, getattr(args, 'default_map', None))
+        else:
+            plan = read_plan(plan_stream, getattr(args, 'default_map', None))
     bin_hash = _sha256(args.bin)
     xdf_hash = _sha256(args.xdf)
     _require_hash('BIN', bin_hash, getattr(args, 'expected_bin_sha256', None))
