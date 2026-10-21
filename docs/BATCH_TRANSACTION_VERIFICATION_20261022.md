@@ -92,3 +92,16 @@ python -m pytest -q test_transactional_batch_unit.py test_batch_hardening.py tes
 Python 3.13.5, pytest 9.0.2. This is a dependency-free synthetic coordinator result, not a complete installed-package result. The locally tested and committed transactional_batch.py module Git blob SHA is 8f419d1d0a3054a08e0250fecf644e50c4ecaa17. The committed test_batch_flag_mask.py Git blob SHA matches the executed local test file: 374bf48ccfd5b3118a389762a3a2f6bf198e8057.
 
 The integration, checksum, native-display and hardware qualification gaps described above remain unchanged.
+
+
+## Exhaustive two-flag bit preservation pass
+
+One additional locally executed dependency-free test iterates all **256 possible original containing-byte values** and all **four combinations of set/clear** for two disjoint flags (1,024 image/operation combinations). For each, it verifies both requested flag bits, all six untouched sibling bits, unchanged bytes outside the targeted offset, immutable on-disk source BIN, and read-only dry-run output behaviour.
+
+~~~console
+python -m pytest -q test_transactional_batch_unit.py test_batch_hardening.py test_batch_selector.py test_batch_json_plan.py test_batch_flag_mask.py test_batch_flag_exhaustive.py
+..........................................................               [100%]
+58 passed in 0.38s
+~~~
+
+The executed file test_batch_flag_exhaustive.py has Git blob SHA df8dcc9d3816b3847480925c2ed9dc2cce5cd507, matched to the committed file. This expands synthetic behavioural evidence; it still cannot replace the pinned Exporter, TunerPro native or exact OSID integration gates.
