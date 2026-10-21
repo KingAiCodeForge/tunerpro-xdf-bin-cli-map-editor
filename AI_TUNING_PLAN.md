@@ -3,7 +3,7 @@
 **Version:** 1.2
 **Date:** 24 September 2026
 **Author:** Jason King (KingAiCodeForge)
-**Status:** CLI editing works for proved fixtures; log-analysis commands remain planned
+**Status:** The older roadmap is retained; the 22 October 2026 branch adds transactional CSV batch editing, while log-analysis commands remain planned.
 
 ---
 
@@ -45,7 +45,7 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 
 ---
 
-## Part 1: Current release boundary (CLI Editor v1.1.0)
+## Part 1: Editor capability boundary (October 2026 candidate)
 
 | Capability | Status | Command |
 |---|---|---|
@@ -56,7 +56,7 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 | Edit table cells (single/range) | Bounded integer layouts; no scoped MATH writes | `edit --autosave` |
 | Edit scalar values | Bounded integer/affine conversions | `edit-scalar --autosave` |
 | Edit flags | Preserve sibling bits; bounded mask | `edit-flag --autosave` |
-| Batch edits from CSV | Disabled: partial-result defect | `batch` |
+| Batch edits from CSV | **Candidate enabled:** preview by default, new BIN and audits with `--autosave --output-dir`; validates final staged image and rejects conflicting byte writes | `batch` |
 | Persist unbound temp edits | Disabled: no source/XDF binding | `save` |
 | Export snapshot (TXT/JSON/MD) | ✅ Done | `export` |
 | Port maps between ECUs | Disabled: partial-result and interpolation validation gaps | `port` |
@@ -185,9 +185,11 @@ inverse encoding and round-trip behavior all agree for the stored raw range.
 > **Command-status boundary:** `ingest-log`, `query-map`, `compare-log` and
 > `suggest` in this section are proposed interfaces. They are not commands in
 > `cli_map_editor.py` as of 20 September 2026. Do not give the examples below
-> to an agent as though they can run today. The current executable commands are
-> `list-maps`, `show-map`, `show-scalar`, `edit`, `edit-scalar`, `batch`,
-> `save`, `export`, `port`, `preflight` and `diff`.
+> to an agent as though they can run today. The executable commands include `list-maps`, `show-map`, `show-scalar`,
+> `show-flag`, `edit`, `edit-scalar`, `edit-flag`, `batch`, `export`,
+> `validate-fixture`, `export-fixture`, `preflight`, `diff`,
+> `verify-raw-patch`, and `apply-raw-patch`. `save` and `port` are
+> present only as disabled error-returning stubs.
 
 ### 2.1 Log Ingestion Command (`ingest-log`)
 
@@ -725,7 +727,7 @@ RECOMMENDATION:
 
 USER: Approve the reviewed, exact-cell spark proposal.
 
-> batch --xdf tune.xdf --bin tune.bin --csv spark_fix_v2.csv
+> batch --xdf tune.xdf --bin tune.bin --csv spark_fix_v2.csv --autosave --output-dir output
   Applied 12 cell changes to ip_igab__n__maf
   Saved: output/tune_batch_20260304_143022.bin
   Log:   output/tune_batch_20260304_143022.log

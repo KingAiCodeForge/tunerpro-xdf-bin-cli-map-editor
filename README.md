@@ -2,7 +2,7 @@
 
 **Offline XDF/BIN inspection, bounded calibration edits and reproducible byte-level review.**
 
-- **Version:** **1.2.0rc2**, an experimental guarded-write prerelease.
+- **Version:** **1.2.0rc2** base with an **unreleased transactional-batch candidate on this branch**. The released rc2 package does not contain this feature.
 - **Documentation review:** 20 October 2026.
 - **Author:** KingAI Pty Ltd / KingAiCodeForge.
 - **Status:** Research and engineering tooling. **Not a flasher, autonomous tuner or vehicle-safety approval.**
@@ -53,7 +53,7 @@ The commands below use the installed `kingai-map-editor` entry point. `python cl
 
 An offline release bundle contains the exact Editor and Exporter wheels, checksums and a Python installer. It requires Python 3.10+ with working `venv` and `ensurepip` support; extract it and run `python "path to bundle/install.py"`. The installer checks wheel hashes before creating a new environment, installs with no network index and refuses an existing environment. This is a portable Python distribution; it does not include a Python interpreter or standalone executable. To reproduce the asset, run `python -m build_portable_bundle --help` and supply the two exact tested wheels and exporter commit.
 
-## What works on `main`
+## What works on this candidate branch
 
 | Command | Current behaviour | Qualification boundary |
 | --- | --- | --- |
@@ -65,9 +65,10 @@ An offline release bundle contains the exact Editor and Exporter wheels, checksu
 | `edit`, `edit-scalar` | Bounded integer edits with supported contiguous storage and proven affine or narrow `K/X` inverse; raw mode where allowed | Requires `--autosave --output-dir`; rejects unsupported math/storage/geometry |
 | `edit-flag` | Set/clear declared 8-bit masks without altering unrelated bits in the same byte | Requires `--autosave --output-dir`; mask and definition must be correct |
 | `verify-raw-patch`, `apply-raw-patch` | Check and apply/reverse strict v2, hash-bound byte manifests to **new** files | Static byte contract only; does not verify patch execution or flash readiness |
-| `batch`, `port`, standalone `save` | **Disabled; return an error** | Do not use examples from the historical README as supported workflows |
+| `batch` | Preview and optionally publish multi-row CSV table, scalar and flag edits into **one** audited new BIN | Validates final-image raw and engineering values, detects overlapping writes; parser's supported math/storage limitations still apply |
+| `port`, standalone `save` | **Disabled; return an error** | No automatic map porting or unbound temporary saves |
 
-**Unsupported writes:** IEEE-754 float writes, nonlinear inverses outside the proven affine and narrow `K/X` classes, scoped per-cell XDF math, arbitrary/non-contiguous strides, automatic cross-ECU porting and multi-operation batch writes. Reciprocal zero targets and unsupported rearrangements fail closed; there is no numerical-search inverse fallback. Live ECU communication, checksum repair and flashing are unavailable. Synthetic success does not qualify any real ECU definition.
+**Unsupported writes:** IEEE-754 float writes, nonlinear inverses outside the proven affine and narrow `K/X` classes, scoped per-cell XDF math, arbitrary/non-contiguous strides, automatic cross-ECU porting. Reciprocal zero targets and unsupported rearrangements fail closed; there is no numerical-search inverse fallback. Live ECU communication, checksum repair and flashing are unavailable. Synthetic success does not qualify any real ECU definition.
 
 ## Exact-pair fixture gate
 
@@ -110,7 +111,7 @@ kingai-map-editor edit-flag --xdf definition.xdf --bin original.bin --name "Exam
 
 Rows and columns are **1-based**. `--raw` requires an integer raw target; fractional raw inputs are rejected, not silently rounded. It **does not bypass** the supported-width, signedness, range, storage-type, stride, equation-scope or output-protection checks. Engineering values may quantize through the proven inverse, using ties-to-even rounding; a result is refused if a neighboring raw value decodes closer to the requested value or the conversion cannot distinguish adjacent raw values. This is a local numerical check, not proof of global monotonicity or native TunerPro rounding parity. Inspect the redecoded result and exact changed bytes. Only use a verified cell/value and a disposable file.
 
-Table range edits revalidate every selected cell against the completed staged image at full precision. If a later write changes an earlier cell's conversion dependency, the operation is refused before saving and its in-memory changes are rolled back. This protects one range operation; it does not enable the disabled multi-operation `batch` workflow.
+Table range edits revalidate every selected cell against the completed staged image at full precision. If a later write changes an earlier cell's conversion dependency, the operation is refused before saving and its in-memory changes are rolled back. This also applies to the transactional `batch` command, which checks all edited objects against its completed staged image.
 
 Each successful edit creates a new timestamped BIN plus a project-owned text `.log` and a separate `_detailed.csv`; existing outputs and source files are not overwritten. The text log **resembles TunerPro's presentation**, but is explicitly identified in the file as a KingAI log, **not a native TunerPro log**. The detailed CSV has these columns:
 
@@ -121,6 +122,68 @@ TIMESTAMP,MAP_NAME,TYPE,ROW,COLUMN,ADDRESS,FILE_OFFSET,OLD_RAW,NEW_RAW,OLD_HEX,N
 Saves prepare and fsync all payloads before publication, publish the audit files first and the BIN last, and refuse existing destinations. A handled failure attempts to roll back only outputs owned by that save and retains labelled `.kingai-save-*.incomplete/` staging evidence. This is **not a crash-proof multi-file transaction**. Treat incomplete staging and any output requiring inspection as a failed save, and keep that evidence private.
 
 Use the **actual output filename** printed by the edit command in the subsequent diff. Do not reuse the original input path as an output, and do not assume a particular timestamp.
+
+## Multiple XDF edits in one transaction (candidate)
+
+This unreleased branch enables a terminal-capable AI agent to change **several XDF-defined tables, scalars and flags in one new BIN**, instead of chaining one output file per edit. CSV and structured JSON plans share the same typed write engine. The original XDF and BIN are never overwritten. These are file edits, not ECU flashing or evidence that an XDF is correct for an OSID.
+
+**First inspect:** use preflight, list-maps, show-map/show-scalar and diff on the exact pair; check which table and axis addresses/unique IDs are actually present. The new list-maps output includes table/scalar XDF uniqueid where supplied by the parser.
+
+### CSV plans
+
+~~~csv
+type,map,row,col,value,raw,expected_raw,uniqueid,address,flag_mask
+scalar,Example scalar,,,12.5,false,10,0x1,0x40,
+table,Example table,1-3,2-4,25.0,false,,0x2,0x80,
+table,Example table,4,1,120,true,,0x2,0x80,
+flag,Example flag,,,set,false,0x00,,0xA0,0x01
+~~~
+
+All values, titles, unique IDs and addresses above are **illustrative**; they are not a tune. Columns type (table/scalar/flag), map, row, col, value and raw retain their earlier behaviour. A four-column map,row,col,value CSV still defaults to tables and converted values. Rows and columns are 1-based and inclusive ranges such as 2-5 remain supported.
+
+New optional fields:
+
+- **expected_raw:** exact stored old integer for each selected cell, scalar, or containing 8-bit flag byte. The comparison sees preceding edits in plan order. A mismatch aborts the entire plan; it does not silently proceed. For ranges, every cell must meet the same supplied expected raw value.
+- **uniqueid:** exact string from the XDF, for distinguishing tables and scalars with duplicate titles. The pinned Exporter does not expose flag unique IDs; use the flag's title plus address instead.
+- **address:** XDF storage address, not physical file offset. For tables this selects the Z-body address. It can be combined with uniqueid; both must match. Ambiguous or missing targets are errors, not first-match selections.
+- **flag_mask:** the 8-bit XDF bit mask for a flag. Combined with its title and address, this disambiguates two flags that share the same title and storage byte but control different bits.
+
+### Machine-readable JSON plans
+
+JSON plans are useful for agent-generated multi-map changes. The schema is kingai.xdf-batch-plan.v1. The two 64-hex-character source hashes are mandatory and must match the files actually read. Replace the illustrative all-zero hashes with real SHA-256 values before executing.
+
+~~~json
+{
+  "schema": "kingai.xdf-batch-plan.v1",
+  "source_bin_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "xdf_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "operations": [
+    {"type": "scalar", "map": "Example scalar", "uniqueid": "0x1", "value": 12.5, "expected_raw": 10},
+    {"type": "table", "map": "Example table", "row": 1, "col": "1-3", "value": 25.0},
+    {"type": "flag", "map": "Example flag", "address": "0xA0", "flag_mask": "0x01", "value": "set"}
+  ]
+}
+~~~
+
+The JSON parser rejects malformed schemas, unknown fields, duplicate keys, nonfinite numbers, unexpected value types and mixed/duplicate source specifications. Both JSON and CSV use the same per-item conversion, byte conflict and final-image consistency checks.
+
+~~~console
+# Read-only previews first.
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --plan-json reviewed-plan.json --json
+
+# Publish one NEW BIN and its two audit files only for an approved exact plan.
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --plan-json reviewed-plan.json --autosave --output-dir reviewed --json
+
+# CSV can also pin the exact input images explicitly.
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv edits.csv --expected-bin-sha256 SHA256_OF_BIN --expected-xdf-sha256 SHA256_OF_XDF --autosave --output-dir reviewed
+~~~
+
+The --json switch emits kingai.xdf-batch.v1 on success, identifying input and plan hashes, typed modifications, the proposed output hash, every changed byte and output paths (or null for preview). A handled batch error emits kingai.xdf-batch-error.v1 with status=error and no claimed output.
+
+Batch staging detects conflicting writes (including overlapping table aliases), while independent flag masks may share a byte. It checks the **complete flag mask**, not only a boolean set/clear interpretation, and verifies final-image decoded values, raw values and claimed modified bytes. Source BIN, XDF and plan hashes are rechecked before publication. An error during staging rolls back the in-memory plan and produces no new BIN.
+
+The existing exclusive save stages a new BIN, .log and _detailed.csv, but is **not a crash-proof three-file transaction**. An I/O interruption or post-publication verification failure must be investigated rather than described as successful. XDF conversions, supported integer storage, raw write bounds and table geometry still govern what can be written; unsupported conversion/stride/float/scoped-math operations fail closed. Review the resulting BIN independently, address ECU-specific checksum/signature requirements and validate firmware/hardware separately. No customer calibration files are bundled.
 
 ## Compare and export
 
@@ -151,7 +214,7 @@ This code has been exercised in research involving BMW Siemens MS42/MS43/MS45 an
 
 Use the Exporter and Editor as the **review loop**: disassemble or trace candidate code consumers; record source hashes and confidence; create/update a review XDF; inspect parsed tables against the correct BIN; diff with known baselines; then compare against native TunerPro and, separately, validated hardware results. Zero or uniform results do not independently establish an error, and matching names are not evidence of a correct cross-OSID port.
 
-Historical MS42/MS43/VY table counts and the old “410 common name matches” example are archived in the [previous README](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md). **Name matches are not directly portable maps**, and historic `batch`/`port` test notes do not override the disabled release boundary.
+Historical MS42/MS43/VY table counts and the old “410 common name matches” example are archived in the [previous README](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md). **Name matches are not directly portable maps**, and historic tests do not establish native parity or cross-OSID port correctness. The new `batch` work is an unreleased candidate; `port` remains disabled.
 
 ## Example instructions to give an AI coding agent
 
@@ -198,6 +261,14 @@ For potential native TunerPro data bindings and read-only MCP integration, see [
 python -m pip install ".[test]"
 python -m pytest -q
 ```
+
+**No-GitHub-Actions qualification path:** When you have a trusted local Exporter 3.7.5rc1 wheel and pytest, run the entire suite directly with the source-aware offline runner:
+
+~~~console
+python run_offline_editor_qualification.py --repo . --exporter-wheel /trusted/path/kingai_tunerpro_xdf-3.7.5rc1-py3-none-any.whl --report-dir /private/results/editor-qualification-01 --expected-wheel-sha256 VERIFIED_SHA256
+~~~
+
+The runner does not install from the internet. It checks wheel metadata and optional SHA-256 and preserves a local pytest transcript and JSON receipt. It does not independently certify the wheel's source commit or any ECU image. See [the executed 22 October hardening receipt](docs/BATCH_HARDENING_OFFLINE_20261022.md). Exactly **40 additional isolated tests passed** locally for plan snapshot hashes, staged per-cell readback and the synthetic offline runner; the full parser-dependent suite remains unrun here. The draft batch now rejects source/plan mutations on previews and binds its plan hash to the exact bytes parsed.
 
 Keep executable results and failures tied to exact commit and dependency versions. Test a built wheel in an isolated environment outside the source checkout. Preserve golden input snapshots and independently compare supported read/edit behaviour against native TunerPro; do not mistake synthetic test counts for ECU or vehicle proof. Some exact-target fixtures are privately held and are not part of this public repository.
 
