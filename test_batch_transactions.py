@@ -1,6 +1,7 @@
 """Synthetic end-to-end regression tests for transactional XDF/BIN CSV editing."""
 
 import csv
+import json
 from pathlib import Path
 import struct
 import sys
@@ -122,3 +123,20 @@ def test_batch_sets_disjoint_flag_bits_in_same_byte(tmp_path, monkeypatch):
     expected = bytearray(original)
     expected[0xC0] |= 0x03
     assert (out / 'synthetic_batch_fixed.bin').read_bytes() == bytes(expected)
+
+
+def test_batch_json_preview_is_complete_and_parseable(tmp_path, monkeypatch, capsys):
+    session, original = make_session(tmp_path)
+    plan = write_csv(tmp_path / 'plan.csv', [
+        ('scalar', 'Scaled scalar', '', '', '-8.2', ''),
+        ('table', 'Scaled table', '1', '1', '7.3', ''),
+    ])
+    assert invoke(monkeypatch, session, plan, '--json') == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt['schema'] == 'kingai.xdf-batch.v1'
+    assert receipt['status'] == 'dry_run'
+    assert receipt['typed_targets'] == 2
+    assert receipt['changed_byte_count'] == len(receipt['changed_bytes'])
+    assert receipt['source_bin']['size'] == len(original)
+    assert receipt['saved_bin'] is None
+    assert Path(session.bin_path).read_bytes() == original
