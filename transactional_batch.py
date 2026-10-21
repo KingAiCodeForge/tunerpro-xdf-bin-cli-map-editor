@@ -181,8 +181,12 @@ def _verify_final(session, before: bytes, claims: dict, expectations: list) -> l
     if len(before) != len(after):
         raise ValueError('Edit changed the BIN length')
     changed = [i for i, (a, b) in enumerate(zip(before, after)) if a != b]
-    if any(i not in claims for i in changed):
-        raise ValueError('Edit changed a byte not claimed by an XDF operation')
+    for offset in changed:
+        permitted = claims.get(offset)
+        if permitted is None:
+            raise ValueError('Edit changed a byte not claimed by an XDF operation')
+        if (before[offset] ^ after[offset]) & ~permitted[0]:
+            raise ValueError(f'Edit changed undeclared bit(s) at file offset 0x{offset:X}')
     for kind, item, row, col, change, view in expectations:
         offset = int(change['file_offset'], 16)
         if kind == 'flag':
