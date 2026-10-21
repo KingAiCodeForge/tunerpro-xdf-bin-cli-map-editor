@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw'}
+ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw'}
 KINDS = {'table', 'scalar', 'flag'}
 
 
@@ -92,8 +92,16 @@ def read_plan(csv_path: str, default_map: str | None = None) -> list[dict[str, A
                     raise ValueError(f'CSV row {row_number}: value must be finite')
                 if raw and not value.is_integer():
                     raise ValueError(f'CSV row {row_number}: raw value must be an integer')
+            expected_text = (row.get('expected_raw') or '').strip()
+            expected_raw = None
+            if expected_text:
+                try:
+                    expected_raw = int(expected_text, 0)
+                except ValueError as exc:
+                    raise ValueError(f'CSV row {row_number}: expected_raw must be a signed integer') from exc
             result.append({'line': row_number, 'type': kind, 'name': name,
-                           'row': r, 'col': c, 'value': value, 'raw': raw})
+                           'row': r, 'col': c, 'value': value, 'raw': raw,
+                           'expected_raw': expected_raw})
     if not result:
         raise ValueError('Edit CSV contains no operations')
     return result
@@ -136,6 +144,14 @@ def _claim_bytes(change: dict, item: dict, claims: dict[int, tuple[int, str]]):
         claims[offset + i] = (before_mask | mask, before_name or change['map'])
 
 
+def _check_expected_raw(op: dict, change: dict) -> None:
+    """If supplied, match the exact original raw cell or containing flag byte."""
+    expected = op.get('expected_raw')
+    if expected is not None and change['old_raw'] != expected:
+        raise ValueError(f"CSV row {op['line']}: {change['map']!r} old raw value changed: "
+                         f"expected={expected}, actual={change['old_raw']}")
+
+
 def _stage_item(session, op: dict, parse_range, parse_flag_state,
                 claims: dict, expectations: list, touched_tables: set):
     kind, name = op['type'], op['name']
@@ -152,6 +168,7 @@ def _stage_item(session, op: dict, parse_range, parse_flag_state,
         for row in row_range:
             for col in col_range:
                 change = session.write_table_cell(item, row, col, op['value'], raw_mode=op['raw'])
+                _check_expected_raw(op, change)
                 _claim_bytes(change, item, claims)
                 expectations.append((kind, item, row, col, change,
                                      _view_value(session, kind, item, row, col, change['new_raw'])))
@@ -163,6 +180,7 @@ def _stage_item(session, op: dict, parse_range, parse_flag_state,
         if item is None:
             raise ValueError(f"CSV row {op['line']}: scalar {name!r} not found")
         change = session.write_scalar(item, op['value'], raw_mode=op['raw'])
+        _check_expected_raw(op, change)
         _claim_bytes(change, item, claims)
         expectations.append((kind, item, 0, 0, change,
                              _view_value(session, kind, item)))
@@ -172,9 +190,15 @@ def _stage_item(session, op: dict, parse_range, parse_flag_state,
             raise ValueError(f"CSV row {op['line']}: flag {name!r} not found")
         state = parse_flag_state(op['value'])
         change = session.write_flag(item, state)
+        _check_expected_raw(op, change)
         _claim_bytes(change, item, claims)
-        expectations.append((kind, item, 0, 0, change,
-                             _view_value(session, kind, item)))
+        # Multi-bit flag clearing requires *all* masked bits to be zero.
+        # A boolean read alone cannot distinguish partial clearance from full.
+        mask = item.get('mask', 0x01)
+        raw, observed = session.read_flag_state(item)
+        if raw & mask != (mask if state else 0) or observed != state:
+            raise ValueError(f"CSV row {op['line']}: incomplete flag mask write for {name!r}")
+        expectations.append((kind, item, 0, 0, change, state))
 
 
 def _verify_final(session, before: bytes, claims: dict, expectations: list) -> list[int]:
@@ -191,9 +215,10 @@ def _verify_final(session, before: bytes, claims: dict, expectations: list) -> l
     for kind, item, row, col, change, view in expectations:
         offset = int(change['file_offset'], 16)
         if kind == 'flag':
-            actual = session.read_flag_state(item)[1]
-            if actual != view:
-                raise ValueError(f"Final flag state changed for {item['title']!r}")
+            raw, actual = session.read_flag_state(item)
+            mask = item.get('mask', 0x01)
+            if raw & mask != (mask if view else 0) or actual != view:
+                raise ValueError(f"Final flag mask changed for {item['title']!r}")
             continue
         size = change['size_bits']
         storage = item['axes']['z'] if kind == 'table' else item
@@ -221,6 +246,7 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
     if not autosave and output_dir:
         raise ValueError('An output directory without --autosave is ambiguous; remove it for preview')
     plan = read_plan(args.csv, getattr(args, 'default_map', None))
+    plan_hash = _sha256(args.csv)
     bin_hash = _sha256(args.bin)
     xdf_hash = _sha256(args.xdf)
     _require_hash('BIN', bin_hash, getattr(args, 'expected_bin_sha256', None))
@@ -231,8 +257,8 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
     before = bytes(session.bin_data)
     if hashlib.sha256(before).hexdigest() != bin_hash:
         raise ValueError('BIN changed while loading; identity check failed')
-    if _sha256(args.xdf) != xdf_hash:
-        raise ValueError('XDF changed while loading; identity check failed')
+    if _sha256(args.xdf) != xdf_hash or _sha256(args.csv) != plan_hash:
+        raise ValueError('XDF or plan changed while loading; identity check failed')
     counts = (len(session.changes), len(session.log_entries))
     claims: dict[int, tuple[int, str]] = {}
     expectations = []
@@ -251,8 +277,9 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
     after_hash = hashlib.sha256(after).hexdigest()
     bin_out, log_out = None, None
     if autosave:
-        if _sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash:
-            raise ValueError('Source BIN/XDF changed while staging; refusing to save')
+        if (_sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash
+                or _sha256(args.csv) != plan_hash):
+            raise ValueError('Source BIN/XDF/plan changed while staging; refusing to save')
         bin_out, log_out = session.save_final(output_dir, 'batch')
         published = Path(bin_out).read_bytes()
         if published != after:
@@ -264,6 +291,7 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
             'status': 'saved' if autosave else 'dry_run',
             'source_bin': {'name': Path(args.bin).name, 'size': len(before), 'sha256': bin_hash},
             'xdf': {'name': Path(args.xdf).name, 'sha256': xdf_hash},
+            'plan': {'name': Path(args.csv).name, 'sha256': plan_hash},
             'csv_rows': len(plan), 'typed_targets': len(expectations),
             'changed_byte_count': len(changed),
             'proposed_bin_sha256': after_hash,
@@ -277,6 +305,7 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
     else:
         print(f'XDF SHA-256: {xdf_hash}')
         print(f'BIN SHA-256: {bin_hash}')
+        print(f'Plan SHA-256: {plan_hash}')
         print(f'Operations: {len(plan)} CSV rows; {len(expectations)} typed targets; '
               f'{len(changed)} changed bytes (of {len(before)})')
         print(f'Proposed BIN SHA-256: {after_hash}')
