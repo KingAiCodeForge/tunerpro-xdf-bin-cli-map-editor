@@ -40,3 +40,40 @@ The ten local tests cover: multi-item successful publication through an isolated
 - Before releasing a new Editor prerelease: execute the whole test suite with the exact pinned Exporter; smoke-test an installed wheel and standalone CLI; replay permissioned real XDF/BIN pairs against native TunerPro; inspect hashes, output audit and changed-byte coverage; verify checksum handling for any intended real use.
 
 This receipt intentionally distinguishes executed coordinator tests from unexecuted integration tests. It is not a completion certificate for ECU compatibility.
+
+
+## Follow-up: multi-target qualification improvements on 22 October 2026
+
+This is a **supplement** to the initial 10-test receipt, not a replacement for its historical provenance.
+
+### Commits and functional changes
+
+- Added per-operation expected_old_raw preconditions (CSV key: expected_raw), plan SHA-256 receipts and load/staging-time plan mutation detection.
+- Corrected multi-bit flag clearing validation: all selected mask bits must be cleared; a false boolean result alone is insufficient.
+- Added optional XDF uniqueid and XDF storage-address selection for duplicate table/scalar titles. The pinned Exporter does not expose flag uniqueids; flag address selection is supported.
+- Added hash-pinned kingai.xdf-batch-plan.v1 JSON operations, requiring both exact source hashes, sharing the CSV validator and rejecting duplicate JSON keys, nonfinite numbers, extra keys, invalid types and mismatched source identities.
+- Exposed CLI --plan-json, additional list-maps IDs and machine-readable batch errors. The old --csv workflow remains available.
+- Added synthetic real-Exporter end-to-end CLI tests as a **committed but not locally executed** candidate.
+
+### Locally executed and repeatable
+
+The following tests executed in the local Python container, not in GitHub Actions:
+
+~~~console
+python -m pytest -q test_transactional_batch_unit.py test_batch_hardening.py test_batch_selector.py test_batch_json_plan.py
+.................................................                        [100%]
+49 passed in 0.12s
+
+python -m py_compile transactional_batch.py test_transactional_batch_unit.py test_batch_hardening.py test_batch_selector.py test_batch_json_plan.py
+# completed with no compilation errors
+~~~
+
+Runtime: Python 3.13.5; pytest 9.0.2. Tests use synthetic bytes and in-memory fake sessions with mocked publication, not firmware or a native ECU parser. Test cases include mixed table/scalar/flag edits, disjoint and overlapping bit masks, expected old raw values, invalid or ambiguous title resolution, exact uniqueid/address matching, JSON source hashes, bad schemas, duplicate keys and plan mutation races.
+
+Committed coordinator Git blob SHA: 7bed00ff639d3d8c4a41686f66861778f1fe7867. This was checked against the locally executed module via git hash-object.
+
+The container could not resolve github.com and does not have the pinned tunerpro_xdf Exporter dependency installed; test_batch_transactions.py and test_batch_plan_cli.py, whole-package tests, installed-wheel smoke, native TunerPro parity, and real exact-image replay remain **not executed here**. The tests committed to the PR do not constitute successful end-to-end validation by themselves. No private BIN/XDF or customer logs were used.
+
+### Release decision
+
+This branch remains an **unreleased draft**. The available evidence proves the standalone batch coordinator against its synthetic test doubles, not native TunerPro compatibility. Before merging/releasing, run the repository suite and isolated installed-wheel smoke on an environment with the exact pinned Exporter, then replay authorized real definition/image pairs. The scripts here did not flash, checksum-repair, or validate an ECU.
