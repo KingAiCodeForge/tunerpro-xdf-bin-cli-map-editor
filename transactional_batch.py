@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import math
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 
 ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address'}
 KINDS = {'table', 'scalar', 'flag'}
+CSV_COLUMNS = ('type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address')
 
 
 def _sha256(path: str) -> str:
@@ -39,9 +42,11 @@ def _require_hash(label: str, observed: str, expected: str | None) -> None:
                          f'expected={expected}, actual={observed}')
 
 
-def read_plan(csv_path: str, default_map: str | None = None) -> list[dict[str, Any]]:
+def read_plan(csv_path, default_map: str | None = None) -> list[dict[str, Any]]:
     """Parse all operations before loading a mutable session. Blank lines are ignored."""
-    with open(csv_path, 'r', encoding='utf-8-sig', newline='') as stream:
+    source = (open(csv_path, 'r', encoding='utf-8-sig', newline='')
+              if isinstance(csv_path, (str, Path)) else nullcontext(csv_path))
+    with source as stream:
         reader = csv.DictReader(stream, strict=True)
         if reader.fieldnames is None:
             raise ValueError('Edit CSV is empty or missing its header')
@@ -116,6 +121,50 @@ def read_plan(csv_path: str, default_map: str | None = None) -> list[dict[str, A
     if not result:
         raise ValueError('Edit CSV contains no operations')
     return result
+
+
+def read_json_plan(json_path: str, default_map: str | None = None):
+    """Parse a strict, hash-bound AI edit plan through the same CSV grammar.
+
+    Returns (operations, pinned_bin_hash, pinned_xdf_hash). A JSON plan must
+    specify the exact source pair, rather than relying on map-title matching.
+    """
+    def reject_constant(value):
+        raise ValueError(f'JSON plan contains nonfinite numeric constant {value!r}')
+
+    with open(json_path, 'r', encoding='utf-8-sig') as stream:
+        plan = json.load(stream, parse_constant=reject_constant)
+    if not isinstance(plan, dict) or set(plan) != {
+            'schema', 'source_bin_sha256', 'xdf_sha256', 'operations'}:
+        raise ValueError('JSON plan requires schema, source_bin_sha256, xdf_sha256, operations only')
+    if plan['schema'] != 'kingai.xdf-batch-plan.v1':
+        raise ValueError('Unsupported batch JSON plan schema')
+    for name in ('source_bin_sha256', 'xdf_sha256'):
+        if not isinstance(plan[name], str):
+            raise ValueError(f'JSON plan {name} must be a 64-digit SHA-256 string')
+        value = plan[name].strip()
+        if len(value) != 64 or any(c not in '0123456789abcdefABCDEF' for c in value):
+            raise ValueError(f'JSON plan {name} must be a 64-digit SHA-256 string')
+    operations = plan['operations']
+    if not isinstance(operations, list) or not operations:
+        raise ValueError('JSON plan operations must be a nonempty array')
+
+    buffer = io.StringIO(newline='')
+    writer = csv.DictWriter(buffer, fieldnames=CSV_COLUMNS, extrasaction='raise')
+    writer.writeheader()
+    for index, item in enumerate(operations, start=1):
+        if not isinstance(item, dict) or set(item) - ALLOWED_COLUMNS:
+            raise ValueError(f'JSON operation {index}: expected only supported edit fields')
+        for key, value in item.items():
+            if isinstance(value, (dict, list)) or isinstance(value, bool) and key != 'raw':
+                raise ValueError(f'JSON operation {index}: invalid value type for {key}')
+            if key == 'raw' and not isinstance(value, (bool, int, str, type(None))):
+                raise ValueError(f'JSON operation {index}: raw must be a boolean or 0/1')
+        writer.writerow({key: (str(value).lower() if isinstance(value, bool) else
+                              '' if value is None else str(value))
+                         for key, value in item.items()})
+    buffer.seek(0)
+    return (read_plan(buffer, default_map), plan['source_bin_sha256'], plan['xdf_sha256'])
 
 
 def _view_value(session, kind, item, row=0, col=0, raw=None):
@@ -281,19 +330,30 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         raise ValueError('Batch publication requires --autosave --output-dir')
     if not autosave and output_dir:
         raise ValueError('An output directory without --autosave is ambiguous; remove it for preview')
-    plan = read_plan(args.csv, getattr(args, 'default_map', None))
-    plan_hash = _sha256(args.csv)
+    json_path = getattr(args, 'plan_json', None)
+    csv_path = getattr(args, 'csv', None)
+    if bool(json_path) == bool(csv_path):
+        raise ValueError('Supply exactly one batch input: --csv or --plan-json')
+    pinned_bin, pinned_xdf = None, None
+    source_path = json_path or csv_path
+    if json_path:
+        plan, pinned_bin, pinned_xdf = read_json_plan(json_path, getattr(args, 'default_map', None))
+    else:
+        plan = read_plan(csv_path, getattr(args, 'default_map', None))
+    plan_hash = _sha256(source_path)
     bin_hash = _sha256(args.bin)
     xdf_hash = _sha256(args.xdf)
     _require_hash('BIN', bin_hash, getattr(args, 'expected_bin_sha256', None))
     _require_hash('XDF', xdf_hash, getattr(args, 'expected_xdf_sha256', None))
+    _require_hash('BIN', bin_hash, pinned_bin)
+    _require_hash('XDF', xdf_hash, pinned_xdf)
     session = session_factory(args.xdf, args.bin)
     if not session.load():
         raise ValueError('Cannot load exact XDF/BIN pair')
     before = bytes(session.bin_data)
     if hashlib.sha256(before).hexdigest() != bin_hash:
         raise ValueError('BIN changed while loading; identity check failed')
-    if _sha256(args.xdf) != xdf_hash or _sha256(args.csv) != plan_hash:
+    if _sha256(args.xdf) != xdf_hash or _sha256(source_path) != plan_hash:
         raise ValueError('XDF or plan changed while loading; identity check failed')
     counts = (len(session.changes), len(session.log_entries))
     claims: dict[int, tuple[int, str]] = {}
@@ -314,7 +374,7 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
     bin_out, log_out = None, None
     if autosave:
         if (_sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash
-                or _sha256(args.csv) != plan_hash):
+                or _sha256(source_path) != plan_hash):
             raise ValueError('Source BIN/XDF/plan changed while staging; refusing to save')
         bin_out, log_out = session.save_final(output_dir, 'batch')
         published = Path(bin_out).read_bytes()
@@ -327,8 +387,10 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
             'status': 'saved' if autosave else 'dry_run',
             'source_bin': {'name': Path(args.bin).name, 'size': len(before), 'sha256': bin_hash},
             'xdf': {'name': Path(args.xdf).name, 'sha256': xdf_hash},
-            'plan': {'name': Path(args.csv).name, 'sha256': plan_hash},
-            'csv_rows': len(plan), 'typed_targets': len(expectations),
+            'plan': {'name': Path(source_path).name, 'sha256': plan_hash,
+                     'format': 'json' if json_path else 'csv'},
+            'csv_rows': len(plan) if not json_path else None,
+            'plan_operations': len(plan), 'typed_targets': len(expectations),
             'changed_byte_count': len(changed),
             'proposed_bin_sha256': after_hash,
             'changes': session.changes,
@@ -342,7 +404,7 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         print(f'XDF SHA-256: {xdf_hash}')
         print(f'BIN SHA-256: {bin_hash}')
         print(f'Plan SHA-256: {plan_hash}')
-        print(f'Operations: {len(plan)} CSV rows; {len(expectations)} typed targets; '
+        print(f'Operations: {len(plan)} plan operations; {len(expectations)} typed targets; '
               f'{len(changed)} changed bytes (of {len(before)})')
         print(f'Proposed BIN SHA-256: {after_hash}')
         for change in session.changes[:60]:
