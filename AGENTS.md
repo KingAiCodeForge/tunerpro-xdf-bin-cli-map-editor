@@ -29,8 +29,9 @@ the exact software identity and independent evidence.
    axes and any uncertainty before proposing an edit.
 5. Make a file write only when the user explicitly specifies named supported
    objects and desired values and approves a reviewable change. Single edits
-   and multi-object CSV `batch` plans are supported: run a read-only batch
-   preview first, then publish one new BIN using `--autosave --output-dir`.
+   and multi-object CSV or hash-pinned JSON `batch` plans are supported: run
+   a read-only batch preview first, then publish one new BIN using
+   `--autosave --output-dir`.
 6. Reload the output, run preflight where applicable and compare before and
    after BINs. Confirm the output size, hashes, expected changed bytes and
    audit logs. Report unexpected or unexplained differences.
@@ -39,7 +40,7 @@ the exact software identity and independent evidence.
    testing are separate responsibilities.
 8. Do not upload customer files, proprietary definitions or datalogs to a
    third-party service without the file owner's authorisation.
-9. Do not use disabled `port` or standalone `save` commands. CSV `batch`
+9. Do not use disabled `port` or standalone `save` commands. CSV/JSON `batch`
    stages multiple edits, detects byte conflicts and validates every edited
    object against the final image before saving. Engineering inverses remain
    limited to proven affine and narrow `K/X` forms.
@@ -59,6 +60,7 @@ kingai-map-editor show-map --xdf definition.xdf --bin original.bin --map "Exact 
 kingai-map-editor show-scalar --xdf definition.xdf --bin original.bin --name "Exact scalar title"
 kingai-map-editor export --xdf definition.xdf --bin original.bin --output-dir inspection
 kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv reviewed-edits.csv
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --plan-json exact-pair-edits.json --json
 ```
 
 All filenames and titles above are placeholders. The tool must be executed
@@ -72,6 +74,12 @@ and storage meet the supported constraints:
 kingai-map-editor edit-scalar --xdf definition.xdf --bin original.bin --name "Exact scalar title" --value 10 --autosave --output-dir reviewed_output
 kingai-map-editor diff --bin-a original.bin --bin-b reviewed_output/REPLACE_WITH_ACTUAL_OUTPUT.bin --xdf definition.xdf
 ```
+
+Batch plans may include exact XDF unique IDs, XDF storage addresses and
+expected old raw values to prevent ambiguous or stale edits. The JSON plan
+requires exact BIN/XDF SHA-256 values and emits a structured error when
+--json is requested. Record the plan SHA-256 too. The pinned Exporter does
+not expose flag unique IDs; flags may be selected by title and address.
 
 Discover the actual output filename from the CLI response; do not assume it
 matches the placeholder. Review rounding, quantisation, offsets, log files
