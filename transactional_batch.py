@@ -18,9 +18,9 @@ from pathlib import Path
 from typing import Any
 
 
-ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address'}
+ALLOWED_COLUMNS = {'type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address', 'flag_mask'}
 KINDS = {'table', 'scalar', 'flag'}
-CSV_COLUMNS = ('type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address')
+CSV_COLUMNS = ('type', 'map', 'row', 'col', 'value', 'raw', 'expected_raw', 'uniqueid', 'address', 'flag_mask')
 
 
 def _sha256(path: str) -> str:
@@ -114,10 +114,21 @@ def read_plan(csv_path, default_map: str | None = None) -> list[dict[str, Any]]:
                     raise ValueError(f'CSV row {row_number}: address must be an XDF integer address') from exc
                 if address < 0:
                     raise ValueError(f'CSV row {row_number}: address cannot be negative')
+            flag_mask_text = (row.get('flag_mask') or '').strip()
+            flag_mask = None
+            if flag_mask_text:
+                if kind != 'flag':
+                    raise ValueError(f'CSV row {row_number}: flag_mask only applies to flags')
+                try:
+                    flag_mask = int(flag_mask_text, 0)
+                except ValueError as exc:
+                    raise ValueError(f'CSV row {row_number}: invalid flag_mask') from exc
+                if not 0 < flag_mask <= 0xFF:
+                    raise ValueError(f'CSV row {row_number}: flag_mask must fit one nonzero byte')
             result.append({'line': row_number, 'type': kind, 'name': name,
                            'row': r, 'col': c, 'value': value, 'raw': raw,
                            'expected_raw': expected_raw, 'uniqueid': uniqueid,
-                           'address': address})
+                           'address': address, 'flag_mask': flag_mask})
     if not result:
         raise ValueError('Edit CSV contains no operations')
     return result
@@ -244,9 +255,13 @@ def _select_item(session, op: dict):
         matches = [item for item in matches if
                    (item.get('axes', {}).get('z', {}).get('address') if kind == 'table'
                     else item.get('address')) == address]
+    flag_mask = op.get('flag_mask')
+    if flag_mask is not None:
+        matches = [item for item in matches if
+                   type(item.get('mask')) is int and item['mask'] == flag_mask]
     if len(matches) > 1:
         raise ValueError(f"CSV row {op['line']}: ambiguous {kind} title {name!r}; "
-                         'supply its XDF uniqueid or data address')
+                         'supply its XDF uniqueid, data address or flag_mask')
     if not matches:
         raise ValueError(f"CSV row {op['line']}: {kind} {name!r} not found with the supplied selectors")
     return matches[0]
