@@ -22,7 +22,7 @@ test = ["pytest>=8,<10"]
 kingai-map-editor = "cli_map_editor:main"
 
 [tool.setuptools]
-py-modules = ["cli_map_editor", "transactional_batch", "tunerpro_exporter_for_cli_editor_version", "raw_patch_manifest", "raw_patch_checksum_profiles", "porting_templates", "build_portable_bundle", "portable_install"]
+py-modules = ["cli_map_editor", "transactional_batch", "batch_plan_snapshot", "tunerpro_exporter_for_cli_editor_version", "raw_patch_manifest", "raw_patch_checksum_profiles", "porting_templates", "build_portable_bundle", "portable_install"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]
