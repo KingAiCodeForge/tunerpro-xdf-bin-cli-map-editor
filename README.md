@@ -132,11 +132,11 @@ This unreleased branch enables a terminal-capable AI agent to change **several X
 ### CSV plans
 
 ~~~csv
-type,map,row,col,value,raw,expected_raw,uniqueid,address
-scalar,Example scalar,,,12.5,false,10,0x1,0x40
-table,Example table,1-3,2-4,25.0,false,,0x2,0x80
-table,Example table,4,1,120,true,,0x2,0x80
-flag,Example flag,,,set,false,0x00,,0xA0
+type,map,row,col,value,raw,expected_raw,uniqueid,address,flag_mask
+scalar,Example scalar,,,12.5,false,10,0x1,0x40,
+table,Example table,1-3,2-4,25.0,false,,0x2,0x80,
+table,Example table,4,1,120,true,,0x2,0x80,
+flag,Example flag,,,set,false,0x00,,0xA0,0x01
 ~~~
 
 All values, titles, unique IDs and addresses above are **illustrative**; they are not a tune. Columns type (table/scalar/flag), map, row, col, value and raw retain their earlier behaviour. A four-column map,row,col,value CSV still defaults to tables and converted values. Rows and columns are 1-based and inclusive ranges such as 2-5 remain supported.
@@ -146,6 +146,7 @@ New optional fields:
 - **expected_raw:** exact stored old integer for each selected cell, scalar, or containing 8-bit flag byte. The comparison sees preceding edits in plan order. A mismatch aborts the entire plan; it does not silently proceed. For ranges, every cell must meet the same supplied expected raw value.
 - **uniqueid:** exact string from the XDF, for distinguishing tables and scalars with duplicate titles. The pinned Exporter does not expose flag unique IDs; use the flag's title plus address instead.
 - **address:** XDF storage address, not physical file offset. For tables this selects the Z-body address. It can be combined with uniqueid; both must match. Ambiguous or missing targets are errors, not first-match selections.
+- **flag_mask:** the 8-bit XDF bit mask for a flag. Combined with its title and address, this disambiguates two flags that share the same title and storage byte but control different bits.
 
 ### Machine-readable JSON plans
 
@@ -159,7 +160,7 @@ JSON plans are useful for agent-generated multi-map changes. The schema is kinga
   "operations": [
     {"type": "scalar", "map": "Example scalar", "uniqueid": "0x1", "value": 12.5, "expected_raw": 10},
     {"type": "table", "map": "Example table", "row": 1, "col": "1-3", "value": 25.0},
-    {"type": "flag", "map": "Example flag", "address": "0xA0", "value": "set"}
+    {"type": "flag", "map": "Example flag", "address": "0xA0", "flag_mask": "0x01", "value": "set"}
   ]
 }
 ~~~
