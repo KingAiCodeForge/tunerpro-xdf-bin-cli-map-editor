@@ -16,7 +16,7 @@
    edit         Edit table cells (single or row/col ranges)
    edit-scalar  Edit a scalar value
    edit-flag    Set or clear one bit flag without changing sibling bits
-   batch        Disabled pending transactional validation
+   batch        Transactional CSV table/scalar/flag edits (dry-run or audited new BIN)
    save         Disabled: unbound temp files cannot be persisted
    export       Snapshot XDF+BIN to an output directory
    port         Disabled pending verified transformations and transactional writes
@@ -66,6 +66,7 @@ from tunerpro_xdf.xdf_addressing import table_layout
 from tunerpro_xdf.xdf_equations import EquationError, inverse_affine, inverse_reciprocal
 from tunerpro_xdf.xdf_values import read_integer, write_integer
 from raw_patch_checksum_profiles import TRUSTED_CHECKSUM_VERIFIERS
+from transactional_batch import run_batch
 from raw_patch_manifest import (
     PatchManifestError,
     apply_patch_manifest,
@@ -1299,10 +1300,8 @@ def cmd_edit_flag(args):
 
 
 def cmd_batch(args):
-    """Refuse batch writes until transactional validation is supported."""
-    print('ERROR: Batch writes are disabled until all-row validation and transactional saves are implemented.')
-    print('Use individual edit commands with --autosave --output-dir, then use the resulting BIN for the next edit.')
-    return 1
+    """Stage and validate a multi-object XDF CSV; optionally publish one audited BIN."""
+    return run_batch(args, XDFBinSession, parse_range, _parse_flag_state)
 
 
 def cmd_save(args):
@@ -2056,15 +2055,16 @@ Examples:
     p_ef.set_defaults(func=cmd_edit_flag)
 
     # ─── batch ───────────────────────────────────────────────────────────
-    p_batch = sp.add_parser('batch', help='Disabled: batch transaction validation is not yet supported')
-    p_batch.add_argument('--xdf', required=True)
-    p_batch.add_argument('--bin', required=True)
-    p_batch.add_argument(
-        '--csv', required=True,
-        help='CSV with columns: map,row,col,value and optional type=flag',
-    )
-    p_batch.add_argument('--default-map', default=None, help='Default map if CSV lacks map column')
-    p_batch.add_argument('--output-dir', default=None)
+    p_batch = sp.add_parser('batch', help='Preview or apply a CSV of XDF table, scalar and flag edits to one new BIN')
+    p_batch.add_argument('--xdf', required=True, help='XDF used for all named edits')
+    p_batch.add_argument('--bin', required=True, help='Original BIN; never modified')
+    p_batch.add_argument('--csv', required=True, help='UTF-8 CSV: type,map,row,col,value,raw')
+    p_batch.add_argument('--default-map', default=None, help='Fallback title for CSV rows without map')
+    p_batch.add_argument('--expected-bin-sha256', help='Optional exact original BIN hash for automated plans')
+    p_batch.add_argument('--expected-xdf-sha256', help='Optional exact original XDF hash for automated plans')
+    p_batch.add_argument('--autosave', '--save', dest='autosave', action='store_true',
+                         help='Publish one new BIN and paired audit files; otherwise dry-run only')
+    p_batch.add_argument('--output-dir', default=None, help='Required with --autosave; existing outputs never overwritten')
     p_batch.set_defaults(func=cmd_batch)
 
     # ─── save ────────────────────────────────────────────────────────────
