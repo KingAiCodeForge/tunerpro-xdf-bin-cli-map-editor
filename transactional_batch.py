@@ -397,11 +397,13 @@ def run_batch(args, session_factory, parse_range, parse_flag_state) -> int:
         raise
     after = bytes(session.bin_data)
     after_hash = hashlib.sha256(after).hexdigest()
+    # A preview is also a contract about a specific input snapshot. Refuse to
+    # report it if any source changed during staging, even without --autosave.
+    if (_sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash
+            or _sha256(source_path) != plan_hash):
+        raise ValueError('Source BIN/XDF/plan changed while staging; refusing to report or save')
     bin_out, log_out = None, None
     if autosave:
-        if (_sha256(args.bin) != bin_hash or _sha256(args.xdf) != xdf_hash
-                or _sha256(source_path) != plan_hash):
-            raise ValueError('Source BIN/XDF/plan changed while staging; refusing to save')
         bin_out, log_out = session.save_final(output_dir, 'batch')
         published = Path(bin_out).read_bytes()
         if published != after:
