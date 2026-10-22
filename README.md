@@ -3,13 +3,17 @@
 **Offline XDF/BIN inspection, bounded calibration edits and reproducible byte-level review.**
 
 - **Version:** **1.2.0rc2**, an experimental guarded-write prerelease.
-- **Documentation review:** 20 October 2026.
+- **Documentation review:** 23 October 2026 (ACDT).
 - **Author:** KingAI Pty Ltd / KingAiCodeForge.
 - **Status:** Research and engineering tooling. **Not a flasher, autonomous tuner or vehicle-safety approval.**
 
 The editor reads TunerPro XDF definitions against a supplied BIN, lets a human or a terminal-capable agent inspect supported items, and produces new BINs and audit records for a narrowly supported set of integer edits. **A valid-looking table, preflight pass or successful byte diff does not prove the selected calibration controls the intended ECU function.** Verify exact software identity, storage, equations, linked items and firmware consumers independently before relying on a definition.
 
 This README describes this integration revision. Read [AGENTS.md](AGENTS.md) for the read-only-first workflow and [integration evidence](docs/INTEGRATION_20261020.md) for provenance, executed checks and unresolved qualification. Historical documentation and examples are preserved in [the previous README revision](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/95cc0f9f79bda3f5b17e49c4a3b9b3ea71241b9/README.md); its disabled-command examples are not current instructions.
+
+**Operator warning:** AI can select the wrong maps, misinterpret definitions or propose unsuitable values. Do not use this tool for tuning unless you understand the ECU/platform, or are working with a competent tuner who does. Independently verify the exact BIN/XDF pairing, selected controls and resulting changes. A successful edit does not prove calibration safety or flash readiness.
+
+See [Guided tuning and research workflow](docs/GUIDED_TUNING_AND_RESEARCH.md) for human-directed scope, reuse of verified platform knowledge, uncertainty handling and the separate batch-development boundary.
 
 ## Who operates this tool?
 
@@ -23,7 +27,7 @@ The agent is an **operator of deterministic software**, not an oracle for ECU co
 | --- | --- | --- |
 | “What's in this calibration?” | Inspect XDF/BIN, preflight, list/show/export supported items | A definition title or plausible value is not proof of the active control |
 | “What changed between stock and modified?” | Compare BIN bytes and optionally attribute changes through the XDF | Keep unattributed bytes in the review |
-| “Change this **verified** scalar/cell to the value I approve” | Execute a supported bounded integer edit on a copy, then re-read/diff | Must have exact input identity, valid math/storage and human approval |
+| “Change this **verified** scalar/cell to the value I approve” | Execute a supported bounded integer edit on a copy, then re-read/diff | Must have exact input identity, valid math/storage and a clear human-directed edit scope |
 | “Apply this **exact** supplied raw-byte patch” | Verify hash-bound v2 manifest and, if approved, apply to a new file | Static verification does not prove code execution or flash readiness |
 | “Make a bouncing limiter / decel tune” | **Investigate first**: locate candidate controls, request hardware/log evidence, report what's proved | No automatic tune recipe, unproven limiter patch or claim of engine safety |
 
@@ -185,7 +189,7 @@ An agent may read and explain outputs, compare exact BIN pairs and prepare a **r
 
 1. Record the exact XDF and BIN identities, and run `preflight`.
 2. Inspect the intended item and verify its address/axis/scaling and actual firmware consumer or an explicit uncertainty/HOLD.
-3. Obtain a human-approved target value and choose a supported single edit.
+3. Use the human-requested target and scope, or an already agreed evidence-backed plan, and choose a supported single edit. A clear request to apply a specific supported edit is sufficient direction; do not demand a second approval file or repeated confirmation. Ask when scope or values are genuinely unresolved.
 4. Write **only to a new file** with `--autosave --output-dir`.
 5. Diff the entire BIN; inspect the detailed CSV, redecoded value, checksum status and any held assumptions.
 6. Retain source originals and reports; **no autonomous flashing**.

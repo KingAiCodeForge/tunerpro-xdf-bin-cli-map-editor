@@ -17,8 +17,11 @@ the exact software identity and independent evidence.
 
 ## Agent operating rules
 
-1. Default to **read-only** inspection. Never infer a tuning value from a
-   vague request such as "make it faster" or "make it safe."
+1. Begin with **read-only** inspection, then follow the human's requested scope.
+   Use verified platform guidance and exact-target evidence rather than guessing
+   from names. A vague goal such as "make it faster" is not a numeric target.
+   If asked to figure it out, investigate and propose evidence-backed options;
+   say "I don't know yet" when a necessary fact remains unproved.
 2. Preserve the original XDF and BIN unmodified, record their SHA-256 hashes,
    sizes, ECU identity and software version where known, and use copied work
    files or a dedicated output directory.
@@ -27,9 +30,14 @@ the exact software identity and independent evidence.
    change its addresses, or edit program code merely to force an operation.
 4. Show the exact map or scalar title, current converted values, units,
    axes and any uncertainty before proposing an edit.
-5. Make a file write only when the user explicitly specifies an exact supported
-   object and desired value and approves a reviewable change. Write one
-   supported operation to a new output file using `--autosave --output-dir`.
+5. Make a file write within a clear human-directed scope using supported
+   objects and evidence-backed target values. A direct request to apply a
+   specified edit, or an already agreed plan, does not require a separate
+   approval file, signature or repeated confirmation. The human need not know
+   an internal map ID: resolve it using verified exact-target guidance and
+   show the selection and rationale. Ask if material choices remain unresolved.
+   On current main, write one supported operation to a new output file using
+   `--autosave --output-dir`; this instruction does not enable batch.
 6. Reload the output, run preflight where applicable and compare before and
    after BINs. Confirm the output size, hashes, expected changed bytes and
    audit logs. Report unexpected or unexplained differences.
@@ -61,7 +69,7 @@ All filenames and titles above are placeholders. The tool must be executed
 in an environment with terminal and filesystem access. Merely uploading the
 source ZIP into a chat does not provide execution.
 
-For **a separately approved scalar edit only**, where its XDF structure
+For **a human-requested scalar edit**, where its XDF structure
 and storage meet the supported constraints:
 
 ```console
@@ -92,3 +100,14 @@ customer data or proprietary XDFs should be committed to this repository.
 
 The current README release boundary governs supported commands. Later
 historical planning sections do not override it.
+
+## Guided tuning versus research
+
+Follow [the guided workflow](docs/GUIDED_TUNING_AND_RESEARCH.md). Reuse retained
+proof for the exact firmware, layout and definition where still applicable;
+do not redo disassembly for every established edit. Recheck evidence affected
+by changed inputs, definitions, code or selectors. Keep map identification,
+file-write correctness and vehicle validation separate. Logs inform behaviour
+but do not alone establish a calibration address. Repeating an AI opinion three
+times is not three independent checks. These instructions do not bypass tool,
+platform or user-specific permissions.

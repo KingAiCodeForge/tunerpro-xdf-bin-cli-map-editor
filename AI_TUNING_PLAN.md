@@ -1,11 +1,27 @@
 # AI-Assisted ECU Tuning Plan — Log Analysis + Map Adjustment via CLI Editor
 
-**Version:** 1.2
-**Date:** 24 September 2026
+**Version:** 1.3 (documentation)
+**Date:** 23 October 2026 (ACDT)
 **Author:** Jason King (KingAiCodeForge)
 **Status:** CLI editing works for proved fixtures; log-analysis commands remain planned
 
 ---
+
+## Current operating guidance (23 October 2026 ACDT)
+
+**Operator warning:** AI can select the wrong maps, misinterpret definitions or propose unsuitable values. Do not use this tool for tuning unless you understand the ECU/platform, or are working with a competent tuner who does. Independently verify the exact BIN/XDF pairing, selected controls and resulting changes. A successful edit does not prove calibration safety or flash readiness.
+
+Follow [Guided tuning and research workflow](docs/GUIDED_TUNING_AND_RESEARCH.md)
+and the current README before using the historical roadmap below. Human input
+sets the objective and allowed edit scope. A clear instruction to apply an
+identified, supported change does not require an additional approval artifact
+or repeated confirmation. Unresolved tuning choices require clarification or
+research, not invented values. Reuse applicable exact-target proof.
+
+Current main is 1.2.0rc2 with Exporter 3.7.5rc1 pinned in package metadata.
+Batch remains disabled on main. PR #10 is an unmerged development candidate,
+not a released capability. Historical examples below mentioning batch are
+roadmap illustrations and must not be executed as current instructions.
 
 ## Overview
 
@@ -45,7 +61,7 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 
 ---
 
-## Part 1: Current release boundary (CLI Editor v1.1.0)
+## Part 1: Current release boundary (CLI Editor v1.2.0rc2)
 
 | Capability | Status | Command |
 |---|---|---|
@@ -62,14 +78,14 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 | Port maps between ECUs | Disabled: partial-result and interpolation validation gaps | `port` |
 | Preflight validation | ✅ Done | `preflight` |
 | Byte-level BIN diff | ✅ Done | `diff` |
-| Inverse math (real→raw) | Symbolically affine only; no numerical fallback | Internal |
+| Inverse math (real→raw) | Proven affine and narrow K/X forms; no numerical-search fallback | Internal |
 | AFR↔Lambda conversion | Experimental, not release-enabled | Internal |
 | Bilinear resample for different axes | Experimental, not release-enabled | Internal |
 | Exact-hash raw patches | Strict v2 manifest with optional registered checksum verifier | `verify-raw-patch`, `apply-raw-patch` |
 
 **Historical fixture families:** BMW MS42 0110C6, BMW MS43 430069, Holden VY V6 $060A Enhanced.
 These names are not blanket compatibility claims. Current portable tests use
-synthetic fixtures and the pinned exporter 3.7.2. One-shot edits produce new
+synthetic fixtures and the pinned exporter 3.7.5rc1. One-shot edits produce new
 exclusive outputs; temp sessions are disabled. Source/log/diff and target-specific
 native/hardware review remain mandatory before vehicle use.
 
@@ -289,7 +305,7 @@ separate batch CSV. Event count alone must never generate a timing value.
 previous timestamped output back through the existing `--bin` argument:
 ```
 # First edit: from factory bin
-python cli_map_editor.py edit --xdf def.xdf --bin factory.bin --map "<map>" --rows <rows> --cols <cols> --value <reviewed-value> --save
+python cli_map_editor.py edit --xdf def.xdf --bin factory.bin --map "<map>" --rows <rows> --cols <cols> --value <reviewed-value> --autosave --output-dir output
 
 # Second edit: from the output of the first
 python cli_map_editor.py edit --xdf def.xdf --bin output/factory_edited_20260304_120000.bin --map "<map>" --rows <rows> --cols <cols> --value <reviewed-value> --save
@@ -411,7 +427,8 @@ AI ACTIONS:
 3. show-map every contributing table and report current axes/values
 4. Propose the smallest bounded cell region, with pass and abort criteria;
    do not derive a change from `knock_retard + margin`
-5. After the exact scope is reviewed, generate and apply the batch CSV
+5. Apply the resolved, human-directed scope with supported single-edit commands;
+   batch CSV application remains a development feature, not current main
 6. diff the exact parent/candidate and fail on any undeclared byte
 7. preflight/export the candidate and issue a review-only receipt
 ```
@@ -522,9 +539,11 @@ These rules are **non-negotiable** — the AI must ALWAYS follow them:
 
 2. **NEVER modify original BIN files** — all changes go to timestamped output copies.
 
-3. **NEVER auto-apply a tuning proposal** — first emit a reviewable plan with
-   exact parameter names, axes, current values, proposed values, reason,
-   evidence grade and abort conditions. A human must select the edit scope.
+3. **Follow human-directed scope** — report exact parameters, axes, current
+   and requested values, rationale, evidence and unresolved assumptions.
+   Execute a clearly requested supported edit without redundant approval
+   ceremony; do not silently turn an investigation or ambiguous goal into a
+   tune. Ask when a material target or scope decision is missing.
 
 4. **NEVER port code patches** — patches are firmware-version-specific binary
    modifications. Even calibration data is portable only after units, axes,
@@ -648,8 +667,9 @@ CURRENT WORKFLOW (always follow in order):
 4. Report observations, competing causes, evidence grade and unresolved items.
 5. Propose one bounded change set and its A/B acceptance test. Do not write it
    while the scope is still unresolved.
-6. Apply only the reviewed rows/cells/scalars with edit/edit-scalar/batch to a
-   copy of the exact parent.
+6. Apply only the requested, resolved rows/cells/scalars with supported
+   edit/edit-scalar/edit-flag commands to a new copy of the exact parent.
+   Batch remains disabled on main; do not execute roadmap batch examples.
 7. Diff parent against candidate, rerun preflight, export the candidate and
    fail if any undeclared byte changed.
 8. Produce a receipt with hashes, raw and engineering values, changed-byte
@@ -659,7 +679,8 @@ SAFETY:
 - Treat output as review-only until exact identity, checksum/signature,
   write/readback and recovery proof are complete
 - NEVER modify original BIN files
-- NEVER auto-apply without user approval
+- Follow the human's requested scope; no extra approval artifact is required
+  for an explicit supported edit. Clarify unresolved targets instead of guessing.
 - Do not use generic timing or fueling allowances
 - Do not port code patches or copy maps between engine sizes by name alone
 - Always run preflight first
