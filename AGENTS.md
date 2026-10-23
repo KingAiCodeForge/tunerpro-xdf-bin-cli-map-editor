@@ -110,6 +110,11 @@ and keep the output folder private/outside the Git repository. The runner
 does not prove the wheel's source commit by inspection of its metadata; see
 docs/BATCH_HARDENING_OFFLINE_20261022.md.
 
+An optional --exporter-source clean exact-pin Git checkout now verifies the
+wheel's non-metadata payloads against committed source. Its receipt distinguishes
+that provenance from native TunerPro, real ECU and reproducible-build claims;
+see docs/REAL_PINNED_EXPORTER_QUALIFICATION_20261024.md.
+
 The README on the checked-out branch governs supported commands. The
 transactional batch feature is an unreleased candidate, not part of the
 previous published rc2 package. Later historical planning notes do not

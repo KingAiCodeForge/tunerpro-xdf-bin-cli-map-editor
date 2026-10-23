@@ -2,6 +2,11 @@
 
 Branch: chatgpt/transactional-xdf-batch-20261022. Candidate on PR #10, not a release, flasher or ECU compatibility certification.
 
+Later isolated review: [24 October real pinned-Exporter and installed-package
+qualification](REAL_PINNED_EXPORTER_QUALIFICATION_20261024.md). Its optional
+source-backed wheel proof and executed results supersede only the corresponding
+unrun gates below; all 22 October results remain historical evidence.
+
 ## Functional changes
 
 1. **Plan SHA-256 now identifies exactly the bytes parsed.** CSV and JSON plans are read once (32 MiB cap), hashed and parsed from the same snapshot. Previously, a replacement between the parse and hash reads could bind different plan contents to the published receipt. BIN, XDF and plan files are rehashed after staging; preview and publication both reject source mutations, and staging failures roll back in-memory bytes and logs.
