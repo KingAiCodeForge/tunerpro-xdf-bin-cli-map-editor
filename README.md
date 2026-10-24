@@ -215,6 +215,7 @@ Issues and regression fixtures are welcome for **specific legal XDF/BIN combinat
 - [Holden research guide](HOLDEN_AI_TUNING_GUIDE.md)
 - [BMW MS42/MS43/MS43X research guide](BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md)
 - [Legacy patch/formula rebuild register](PATCH_REBUILD_REGISTER.md)
+- [FlashOnline, NVRAM, chip burners, OBD/bench flash, real timing estimates and fork-your-own-adapter walkthrough](docs/FLASHONLINE_NVRAM_EPROM_AND_BYO_HARDWARE_GUIDE.md) (**proposed hardware integration, not shipped**)
 - [Public Universal Exporter](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter)
 - [TunerPro official site](https://www.tunerpro.net/)
 
