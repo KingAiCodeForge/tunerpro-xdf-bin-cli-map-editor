@@ -107,7 +107,8 @@ def test_cli_probe_and_preview_no_device(tmp_path, capsys):
 
 def test_isolated_python_cli_and_optimized_mode(tmp_path):
     image, data, digest = fixture(tmp_path)
-    script = Path(__file__).parent / 'mock_hardware_adapter.py'
+    import mock_hardware_adapter as module
+    script = Path(module.__file__).resolve()
     for flag in ([], ['-O']):
         result = subprocess.run(
             [sys.executable, *flag, '-I', str(script), 'adapter-preview', '--bin', str(image),
@@ -131,7 +132,7 @@ def test_in_place_source_mutation_refused(tmp_path, monkeypatch):
         if str(path) == str(image):
             calls['n'] += 1
             if calls['n'] == 2:
-                image.write_bytes(data[:-1] + b'X')
+                image.write_bytes(data[:-1])
                 return original(path, *args, **kwargs)
         return ret
     monkeypatch.setattr(Path, 'stat', changing_stat)
