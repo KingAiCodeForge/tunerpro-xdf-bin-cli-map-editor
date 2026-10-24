@@ -15,6 +15,8 @@ This README describes this integration revision. Read [AGENTS.md](AGENTS.md) for
 
 See [Guided tuning and research workflow](docs/GUIDED_TUNING_AND_RESEARCH.md) for human-directed scope, reuse of verified platform knowledge, uncertainty handling and the separate batch-development boundary.
 
+**Development branch capability, not on the released main branch:** The [mock hardware-adapter reference](docs/MOCK_HARDWARE_ADAPTER.md) adds `adapter-probe` and `adapter-preview` to the existing CLI. These perform only local source-image SHA-256/size checking, return deterministic JSON receipts and **never contact or write hardware**. They are not FlashOnline, NVRAM, checksum repair, a flasher, or live tuning. A target label supplied by an operator is not proof of connected ECU identity.
+
 ## Who operates this tool?
 
 **The conversation is the human interface; the command line is the AI agent's interface.** The intended user can describe a calibration inspection or a precisely specified edit in ordinary language. A terminal-capable agent such as **Codex** or **Claude Code** reads the tool's help, inspects the provided XDF/BIN, executes supported Python commands and returns the measured result, diff and audit evidence. A human can use the same commands manually, but this project is designed primarily as a **machine-operable calibration engine**, not another table-editing GUI.
