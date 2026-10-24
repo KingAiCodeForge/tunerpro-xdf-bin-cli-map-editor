@@ -16,6 +16,8 @@ The project is a **deterministic XDF/BIN inspection and guarded file editor**, d
 
 ## Recommended first PR
 
+**Hardware/DLL contributors:** Follow the [step-by-step FlashOnline, NVRAM, EEPROM/EPROM, in-car/bench-flash and bring-your-own adapter guide](docs/FLASHONLINE_NVRAM_EPROM_AND_BYO_HARDWARE_GUIDE.md). It includes fork/install commands, a **mock-only** Python reference, device capability declarations, source-hash tests, integration choices and measured-versus-theoretical transfer time. All example adapter functions are **proposed**, not installed entry points. Start with a simulated or read-only contribution; treat a real ECU/flash write as a separately qualified operation.
+
 Choose **one** tested change. Examples:
 
 - A new synthetic golden image and fail-closed regression for one *existing* checksum verification profile.
