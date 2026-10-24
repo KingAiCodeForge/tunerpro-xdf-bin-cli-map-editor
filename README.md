@@ -15,6 +15,8 @@ This README describes this integration revision. Read [AGENTS.md](AGENTS.md) for
 
 See [Guided tuning and research workflow](docs/GUIDED_TUNING_AND_RESEARCH.md) for human-directed scope, reuse of verified platform knowledge, uncertainty handling and the separate batch-development boundary.
 
+**Future, not implemented:** [ADX/XDL log corrections, natural-language tuning prompts and live-tuning roadmap](docs/ADX_XDL_PROMPT_TUNING_AND_LIVE_ROADMAP.md) describes the proposed staged integration, while the CLI remains a deterministic file editor.
+
 ## Who operates this tool?
 
 **The conversation is the human interface; the command line is the AI agent's interface.** The intended user can describe a calibration inspection or a precisely specified edit in ordinary language. A terminal-capable agent such as **Codex** or **Claude Code** reads the tool's help, inspects the provided XDF/BIN, executes supported Python commands and returns the measured result, diff and audit evidence. A human can use the same commands manually, but this project is designed primarily as a **machine-operable calibration engine**, not another table-editing GUI.
