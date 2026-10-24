@@ -11,6 +11,8 @@ An XDF describes calibration data; an ADX may describe data acquisition; an XDL 
 
 ## Present capabilities versus proposals
 
+For a **device-by-device walkthrough**, see [FlashOnline, NVRAM, EPROM/EEPROM burners, OBD/bench flashing and how to build an adapter in a fork](FLASHONLINE_NVRAM_EPROM_AND_BYO_HARDWARE_GUIDE.md). That guide explicitly separates host BIN edits, hardware emulation, live datalogging, diagnostic programming and chip burning, and distinguishes baudrate-derived lower bounds from real flash-tool timings. The sample code is a mock, not an installed plugin API.
+
 | Component | Status in public repository | What it does / cannot yet do |
 | --- | --- | --- |
 | XDF/BIN read, preflight, guarded single edits, diff | On `main`, fixture-scoped | Reads and edits **copies** of files. Not online editing. |
