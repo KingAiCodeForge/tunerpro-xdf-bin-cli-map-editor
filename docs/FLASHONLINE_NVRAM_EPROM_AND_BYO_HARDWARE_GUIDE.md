@@ -4,7 +4,7 @@
 **Audience:** experienced tuners, ECU developers, hardware/plugin authors, reviewers and people cloning or forking the MIT-licensed [KingAI CLI Map Editor](../README.md).  
 **Document status:** technical integration guide, vendor-grounded examples, **not a working hardware plugin, flash command or timing benchmark**.
 
-**Important release boundary:** Editor \`main\` version 1.2.0rc2 reads/inspects XDF+BIN and supports a narrow set of guarded edits to **new files**. It is not an ECU flasher or live tuner. [Batch PR #10](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/pull/10) remains a separate **unmerged draft**. The proposed adapters, semantic handles, signed plans, user-interface registry and external hardware commands in this document **do not exist in the released program**. No undocumented CLI arguments, device DLLs, proprietary binaries or firmware are supplied here. Consult [hardware and checksum roadmap](HARDWARE_CHECKSUM_FLASH_PLUGIN_ROADMAP.md) and [CONTRIBUTING](../CONTRIBUTING.md).
+**Important release boundary:** Editor `main` version 1.2.0rc2 reads/inspects XDF+BIN and supports a narrow set of guarded edits to **new files**. It is not an ECU flasher or live tuner. [Batch PR #10](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/pull/10) remains a separate **unmerged draft**. The proposed adapters, semantic handles, signed plans, user-interface registry and external hardware commands in this document **do not exist in the released program**. No undocumented CLI arguments, device DLLs, proprietary binaries or firmware are supplied here. Consult [hardware and checksum roadmap](HARDWARE_CHECKSUM_FLASH_PLUGIN_ROADMAP.md) and [CONTRIBUTING](../CONTRIBUTING.md).
 
 The Editor should become broadly extensible through **one deterministic file-edit and receipt path** and separately permissioned hardware interfaces. An XDF, BIN, datalog and a connected USB interface alone do **not** prove that the ECU can be programmed or that its calibration can be changed with the engine running.
 
@@ -56,7 +56,7 @@ The [Moates Ostrich 2.0](https://shop.moates.net/pages/ostrich-2-0) is an **8-bi
 
 NVRAM may be an aftermarket calibration board, a battery-backed RAM emulator, a nonvolatile SRAM device or a manufacturer-specific architecture. It does not inherently mean the ECU or host offers live per-cell writes. A contributing adapter should prove the exact board revision, voltage, memory size/banks, write granularity, runtime synchronization, host link, readback, reset/power retention and valid update state. A live RAM write may *not* persist to the ECU's original flash; conversely a persistent NVRAM write might still require a paused ECU or reset.
 
-Retain distinct capabilities: \`read_emulator_image\`, \`upload_emulator_image\`, \`write_calibration_ram\`, \`write_nvram\`, \`read_persistent_state\`. Never conflate confirmed host transmission with what is stored inside the device or acted upon by the ECU.
+Retain distinct capabilities: `read_emulator_image`, `upload_emulator_image`, `write_calibration_ram`, `write_nvram`, `read_persistent_state`. Never conflate confirmed host transmission with what is stored inside the device or acted upon by the ECU.
 
 ### 3.3 Bench flashing and burners
 
@@ -72,11 +72,11 @@ A file tool should create a new image, prove its identity and checksum status, a
 
 **There is no honest universal flash time.** File preparation may be fast, a supported memory emulator may update in seconds, and an OEM in-car programming session can take **minutes to tens of minutes**. **A ten-minute full write is entirely plausible**, especially for large images over slower links or tools with erase/verify/handshake overhead.
 
-For a serial link with \`8N1\` framing, a minimum payload transmission time (not an end-to-end flash estimate) is:
+For a serial link with `8N1` framing, a minimum payload transmission time (not an end-to-end flash estimate) is:
 
-\`T_payload_seconds = image_bytes * 10 / baud_bits_per_second\`
+`T_payload_seconds = image_bytes * 10 / baud_bits_per_second`
 
-Each 8-bit data byte costs 10 line bits with start/stop. An \`8E1\` link uses **11 bits per byte** (start, 8 data, parity, stop). Protocol headers, echo, retries, security access, erase time, storage-program timings, checksum verification, readback, ignition cycles and software handshakes all add time.
+Each 8-bit data byte costs 10 line bits with start/stop. An `8E1` link uses **11 bits per byte** (start, 8 data, parity, stop). Protocol headers, echo, retries, security access, erase time, storage-program timings, checksum verification, readback, ignition cycles and software handshakes all add time.
 
 **Idealized full-image serial payload only** (zero overhead, continuous link):
 
@@ -100,7 +100,7 @@ CAN and CAN-FD bitrates **cannot be substituted directly** into that UART equati
 
 **KingAI future estimate model** (planning API, not an implemented ETA feature):
 
-\`\`\`text
+```text
 estimated_operation_time =
   handshake/session setup
   + target read/identity checks
@@ -110,7 +110,7 @@ estimated_operation_time =
   + checksum/signature/readback verification
   + required resets / reinitialization
   + measured retry margin
-\`\`\`
+```
 
 For user-facing times, label **measured hardware/tool/firmware revision data** separately from derived bit-rate lower bounds. A controller should expose a **measured progress state**, not pretend that a single baudrate determines a safe timeout. An unexpectedly lengthy write needs vendor procedure and recovery logic, not an agent-induced interruption.
 
@@ -136,7 +136,7 @@ Never extrapolate the Toyota figures to every brand or claim the FlashOnline pro
 
 Fork [KingAI CLI Map Editor](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor) on GitHub, then on a Windows developer workstation with Python 3.10+ and Git:
 
-\`\`\`powershell
+```powershell
 git clone https://github.com/YOUR_GITHUB_NAME/tunerpro-xdf-bin-cli-map-editor.git
 cd tunerpro-xdf-bin-cli-map-editor
 git remote add upstream https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor.git
@@ -145,15 +145,15 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe cli_map_editor.py --help
-\`\`\`
+```
 
-Run the documented read-only CLI \`preflight\` and \`list-maps\` against a synthetic or permissioned exact XDF/BIN pair. **Record actual outcomes**, including failures. The Editor pins an external Exporter source; installation therefore needs that dependency to be available. Check [README](../README.md), [AGENTS](../AGENTS.md) and any red CI rather than assuming all environments pass.
+Run the documented read-only CLI `preflight` and `list-maps` against a synthetic or permissioned exact XDF/BIN pair. **Record actual outcomes**, including failures. The Editor pins an external Exporter source; installation therefore needs that dependency to be available. Check [README](../README.md), [AGENTS](../AGENTS.md) and any red CI rather than assuming all environments pass.
 
 ### Step 2: Write the target support declaration *before code*
 
-In your fork, propose a file such as \`extensions/your_vendor/adapter.toml\` or equivalent versioned JSON containing:
+In your fork, propose a file such as `extensions/your_vendor/adapter.toml` or equivalent versioned JSON containing:
 
-\`\`\`toml
+```toml
 # PROPOSED metadata only; the public CLI does not parse this file.
 adapter_id = "contributor.mock-eprom"
 version = "0.1.0"
@@ -167,15 +167,15 @@ exact_ecu_software_ids = []
 image_sizes_bytes = []
 licence = "MIT"
 external_vendor_binary = false
-\`\`\`
+```
 
 For real hardware, **required facts** include exact hardware/chip revision, bus width, voltage, memory capacity, bank/address mapping, vendor firmware/driver version, host architecture, supported operating mode, independently read device identity, permitted target software layout, start/end/data granularity and readback semantics. Empty support lists mean **no hardware qualified**, not “all hardware accepted.”
 
 ### Step 3: Build a *no-hardware* reference adapter and proof
 
-The first commit can implement \`probe_mock()\`, \`preview_upload()\` and a structured refusal for unsupported operations. For example, a **standalone illustrative helper**, **not** a plugin entry point provided by the current Editor:
+The first commit can implement `probe_mock()`, `preview_upload()` and a structured refusal for unsupported operations. For example, a **standalone illustrative helper**, **not** a plugin entry point provided by the current Editor:
 
-\`\`\`python
+```python
 # extensions/your_vendor/mock_adapter.py -- conceptual standalone example
 from pathlib import Path
 import hashlib
@@ -199,7 +199,7 @@ def preview_upload(path: Path, expected_sha256: str, exact_image_size: int):
 
 def flash(*args, **kwargs):
     raise UnsupportedHardwareOperation("No qualified hardware writer registered")
-\`\`\`
+```
 
 Add tests for correct/wrong hash, correct/wrong size, missing file, duplicate devices, unsupported chip width, unavailable driver, truncated image, denied operation, loss of link and inconclusive readback. A mock's simulated “success” is only a test that the host program made the expected decision.
 
@@ -210,12 +210,12 @@ Add tests for correct/wrong hash, correct/wrong size, missing file, duplicate de
 | Licensed Python checksum code | Pure Python verifier/repair **to new copy** with independent golden vectors | Importing arbitrary code supplied inside the edit plan |
 | Named external flasher executable | Local **allowlisted executable** with typed argument-vector inputs, dry-run first, version and identity capture | Shell-string interpolation or unverified unattended program/erase commands |
 | J2534 interface with installed vendor DLL | Windows J2534 driver discovery and **read-only** transport probe first; protocol separately | Calling the J2534 DLL as if it were a universal flash algorithm |
-| TunerPro RT plugin/checksum DLL | Use the supported **TunerPro host** or independently documented SDK/ABI under appropriate licence | Guessing exported function addresses or calling an unknown DLL via \`ctypes\` |
+| TunerPro RT plugin/checksum DLL | Use the supported **TunerPro host** or independently documented SDK/ABI under appropriate licence | Guessing exported function addresses or calling an unknown DLL via `ctypes` |
 | FlashOnline/MotronicRT/Ostrich | Supported utility-hosted handoff or documented manufacturer API, mock file watcher first | Claiming a BIN-save event automatically means the ECU changed |
 | Chip burner/programmer | Manufacturer-supported chip/programmer CLI, independent chip-ID and verify receipts | Guessing erase voltage, package pinout or chip command sequences |
 | Vendor software with private definition/IP | Named, authorized semantic API/SDK, if the provider offers one | Scraping/exporting proprietary definitions or circumventing licence/authorization |
 
-For **J2534**, Opus IVS documents discovery through vendor registry entries such as \`PassThruSupport.04.04\` and a per-device \`FunctionLibrary\`; confirm current DLL API/bitness and handle multi-device enumeration. A J2534 DLL is **not the same ABI** as a TunerPro data-acquisition/emulation/checksum plugin. [Official vendor example](https://opusivs-au.com/support/oem-customer-support/how-to-program-with-opus-ivss-passthru-sae-j2534-dll/discovery-of-the-dll/).
+For **J2534**, Opus IVS documents discovery through vendor registry entries such as `PassThruSupport.04.04` and a per-device `FunctionLibrary`; confirm current DLL API/bitness and handle multi-device enumeration. A J2534 DLL is **not the same ABI** as a TunerPro data-acquisition/emulation/checksum plugin. [Official vendor example](https://opusivs-au.com/support/oem-customer-support/how-to-program-with-opus-ivss-passthru-sae-j2534-dll/discovery-of-the-dll/).
 
 For DLLs from external tools, retain their binary, licence and installation **outside the MIT repository** unless redistribution is clearly permitted. Prefer a deliberately configured **local child process** for native/vendor code so errors, architecture, output and privilege can be monitored independently. Separate process isolation does not make ECU commands physically safe.
 
@@ -223,7 +223,7 @@ For DLLs from external tools, retain their binary, licence and installation **ou
 
 A documented mock/driver contract should eventually include:
 
-\`\`\`text
+```text
 identify_adapter -> id, version, binary hash, vendor, licence
 probe_device(read_only=True) -> exact device identity, firmware, capabilities
 verify_candidate_image(image_sha256, target_identity) -> eligible | refusal
@@ -231,9 +231,9 @@ preview_handoff -> intended byte count, strategy, expected result, dry_run=true
 execute_supervised_handoff -> only when exact adapter/target/operation qualified
 verify_destination -> verified | mismatch | inconclusive | unsupported
 safe_stop/recovery -> recorded outcome; never presume an interrupted flash succeeded
-\`\`\`
+```
 
-A device operation receipt must distinguish \`file_created\`, \`image_validated\`, \`transfer_started\`, \`device_reported_success\`, \`independent_readback_verified\`, and \`physical_effect_validated\`. These are not equivalent. Report **actual elapsed time**, byte count and *effective measured throughput* only when observed.
+A device operation receipt must distinguish `file_created`, `image_validated`, `transfer_started`, `device_reported_success`, `independent_readback_verified`, and `physical_effect_validated`. These are not equivalent. Report **actual elapsed time**, byte count and *effective measured throughput* only when observed.
 
 Retain original BIN/XDF and all evidence. Do not promote a checksum verifier into a repair function without exact checksum-storage offsets, dependency order, golden repaired images and an independent full-image diff. Existing [MS42/MS43/VY checksum verifiers](../raw_patch_checksum_profiles.py) are useful **read-only examples** but are not a general chip-burning plugin system.
 
@@ -241,7 +241,7 @@ Retain original BIN/XDF and all evidence. Do not promote a checksum verifier int
 
 **One execution rule:** CLI, agent tool and any future **single-script PySide6/Qt GUI** must use the **same deterministic command registry and validation engine**. A GUI should be an optional client, not a second write implementation or another permission boundary. An agent can keep using CLI arguments even if a user later prefers buttons.
 
-**ChatGPTz idea 💡 (proposed):** a typed \`CommandSpec\` / argument registry describing names, types, defaults, units, safety class, help text, supported capabilities, and result schema; generate \`--help\`, contributor/agent guides, JSON tools and eventual Qt forms from it. **This registry is not in today's released CLI**, and no existing command gains new arguments from the examples here. The idea is motivated by avoiding drift across CLI help, \`AGENTS.md\`, MCP and GUIs.
+**ChatGPTz idea 💡 (proposed):** a typed `CommandSpec` / argument registry describing names, types, defaults, units, safety class, help text, supported capabilities, and result schema; generate `--help`, contributor/agent guides, JSON tools and eventual Qt forms from it. **This registry is not in today's released CLI**, and no existing command gains new arguments from the examples here. The idea is motivated by avoiding drift across CLI help, `AGENTS.md`, MCP and GUIs.
 
 In future, a GUI may translate clicks to validated command args or call the same internal handler. If a GUI button can perform something the CLI/API cannot express, the interfaces have diverged and should be reconciled. Do **not** use a GUI to bypass any write guard.
 
@@ -271,12 +271,12 @@ The MIT licence does not impose a legal *professionals-only use restriction*; th
 
 **For a partner's proprietary, server-owned definition database**, agent-visible plans can use a stable, version-scoped **semantic handle**, row/column and engineering-unit target instead of exposing raw memory addresses:
 
-\`\`\`text
+```text
 agent sees:  vendor-approved map_handle + row/col + units + requested value
 server owns: handle -> verified definition/address/memory mapping -> byte writer
 agent gets:  change receipt with map/value, opaque image/plan identity and status
 vendor retains: full private byte/offset audit and underlying definitions
-\`\`\`
+```
 
 This is **not** how the public Editor currently hides data: users of the public XDF/BIN CLI have local definitions and full raw byte diffs. An externally returned full byte/offset receipt would disclose those offsets; a private partner would need a deliberate **redacted external receipt plus internally retained full audit**. Never claim both complete public raw offsets and secret address maps simultaneously.
 
