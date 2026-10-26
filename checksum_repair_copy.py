@@ -13,8 +13,10 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 from typing import Any
 
 from raw_patch_checksum_profiles import (
@@ -22,6 +24,7 @@ from raw_patch_checksum_profiles import (
     VY_CHECKSUM_CONTRACT,
     VY_CHECKSUM_OFFSET,
     VY_PROFILE_ID,
+    VY_IMAGE_SIZE,
     verify_holden_vy_060a_92118883_additive16,
 )
 
@@ -35,6 +38,48 @@ class ChecksumRepairCopyError(ValueError):
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _context(phase: str) -> dict[str, Any]:
+    context = copy.deepcopy(VY_CHECKSUM_CONTRACT)
+    context["phase"] = phase
+    return context
+
+
+def _read_image(path: Path) -> bytes:
+    """Bound one regular, non-reparse image snapshot before allocating it."""
+    before = path.lstat()
+    if (not stat.S_ISREG(before.st_mode)
+            or getattr(before, "st_file_attributes", 0) & 0x400):
+        raise ChecksumRepairCopyError("image must be a regular non-reparse file")
+    if before.st_size != VY_IMAGE_SIZE:
+        raise ChecksumRepairCopyError(f"expected {VY_IMAGE_SIZE}-byte VY full image")
+
+    def identity(value):
+        return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+
+    with path.open("rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if identity(opened) != identity(before):
+            raise ChecksumRepairCopyError("image changed while opening snapshot")
+        image = stream.read(VY_IMAGE_SIZE + 1)
+        after = os.fstat(stream.fileno())
+    current = path.lstat()
+    if (len(image) != VY_IMAGE_SIZE
+            or identity(after) != identity(before)
+            or identity(current) != identity(before)
+            or not stat.S_ISREG(current.st_mode)
+            or getattr(current, "st_file_attributes", 0) & 0x400):
+        raise ChecksumRepairCopyError("image changed while reading snapshot")
+    return image
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    value = path.lstat()
+    if (not stat.S_ISDIR(value.st_mode)
+            or getattr(value, "st_file_attributes", 0) & 0x400):
+        raise ChecksumRepairCopyError("output directory must not be a reparse point")
+    return value.st_dev, value.st_ino
 
 
 def plan_repair_copy(image: bytes, *, expected_sha256: str) -> tuple[bytes, dict[str, Any]]:
@@ -54,10 +99,8 @@ def plan_repair_copy(image: bytes, *, expected_sha256: str) -> tuple[bytes, dict
         raise ChecksumRepairCopyError("whole-file input SHA-256 mismatch; no repair attempted")
 
     # Do not accept a caller-supplied checksum formula, offsets or code.
-    context = copy.deepcopy(VY_CHECKSUM_CONTRACT)
-    context["phase"] = "input"
     try:
-        before = verify_holden_vy_060a_92118883_additive16(image, context)
+        before = verify_holden_vy_060a_92118883_additive16(image, _context("input"))
     except ChecksumProfileError as exc:
         raise ChecksumRepairCopyError(f"trusted VY verifier rejected input: {exc}") from exc
     if (before.get("profile") != VY_PROFILE_ID
@@ -82,7 +125,7 @@ def plan_repair_copy(image: bytes, *, expected_sha256: str) -> tuple[bytes, dict
         raise ChecksumRepairCopyError("unexpected non-checksum byte difference")
     try:
         after = verify_holden_vy_060a_92118883_additive16(
-            repaired, copy.deepcopy(VY_CHECKSUM_CONTRACT)
+            repaired, _context("output")
         )
     except ChecksumProfileError as exc:
         raise ChecksumRepairCopyError(f"trusted verifier rejected repaired image: {exc}") from exc
@@ -122,7 +165,7 @@ def write_repair_package(
 ) -> dict[str, Any]:
     """Create a new output directory; refuse all existing output destinations.
 
-    This is a two-file review artifact, not an atomic cross-filesystem ECU tool.
+    This is a review artifact, not an atomic cross-filesystem ECU tool.
     Errors leave the newly created review folder for inspection; the source is
     untouched. Always check the complete receipt before using its output.
     """
@@ -130,7 +173,7 @@ def write_repair_package(
     output_dir = Path(output_dir)
     if not source_path.is_file():
         raise ChecksumRepairCopyError("source must be a regular existing file")
-    original = source_path.read_bytes()
+    original = _read_image(source_path)
     repaired, receipt = plan_repair_copy(original, expected_sha256=expected_sha256)
     if not receipt["changed_offsets"]:
         raise ChecksumRepairCopyError("stored checksum already valid: no repair output created")
@@ -138,28 +181,49 @@ def write_repair_package(
         raise FileExistsError(f"output directory already exists: {output_dir}")
     if not output_dir.parent.is_dir():
         raise ChecksumRepairCopyError("output parent directory must already exist")
+    _directory_identity(output_dir.parent)
     output_dir.mkdir(exist_ok=False)
+    directory_identity = _directory_identity(output_dir)
     out_bin = output_dir / (source_path.stem + ".checksum-copy.bin")
     out_receipt = output_dir / "receipt.json"
     with out_bin.open("xb") as f:
-        f.write(repaired)
+        if f.write(repaired) != len(repaired):
+            raise ChecksumRepairCopyError("incomplete checksum-copy write")
         f.flush()
-    written = out_bin.read_bytes()
+        os.fsync(f.fileno())
+    written = _read_image(out_bin)
     if (_sha256(written) != receipt["output_sha256"]
             or written != repaired
-            or source_path.read_bytes() != original):
+            or _read_image(source_path) != original):
         raise ChecksumRepairCopyError("readback or original-preservation check failed")
     # Independent post-write checksum verification, not only prior in-memory proof.
     final = verify_holden_vy_060a_92118883_additive16(
-        written, copy.deepcopy(VY_CHECKSUM_CONTRACT)
+        written, _context("output")
     )
     if not final["valid"]:
         raise ChecksumRepairCopyError("written-copy checksum postflight failed")
     receipt["output_filename"] = out_bin.name
     receipt["source_filename"] = source_path.name
-    with out_receipt.open("x", encoding="utf-8", newline="\n") as f:
+    # A partial JSON write must never appear under the final receipt name.
+    pending = output_dir / "receipt.json.pending"
+    with pending.open("x", encoding="utf-8", newline="\n") as f:
         json.dump(receipt, f, indent=2, sort_keys=True)
         f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    try:
+        staged_receipt = json.loads(pending.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise ChecksumRepairCopyError("staged receipt changed before publication") from exc
+    if (_directory_identity(output_dir) != directory_identity
+            or _read_image(out_bin) != repaired
+            or _read_image(source_path) != original
+            or staged_receipt != receipt):
+        raise ChecksumRepairCopyError("package changed before receipt publication")
+    # Linking is atomic and refuses an existing destination on supported local
+    # filesystems. No overwrite fallback: unsupported filesystems fail closed.
+    os.link(pending, out_receipt)
+    pending.unlink()
     return receipt
 
 
@@ -172,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.output_dir is None:
-            _, result = plan_repair_copy(args.source.read_bytes(),
+            _, result = plan_repair_copy(_read_image(args.source),
                                          expected_sha256=args.expected_sha256)
         else:
             result = write_repair_package(args.source, args.output_dir,

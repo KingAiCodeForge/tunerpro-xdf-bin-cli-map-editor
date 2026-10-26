@@ -3,9 +3,14 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
+import checksum_repair_copy as adapter
 from checksum_repair_copy import ChecksumRepairCopyError, plan_repair_copy, write_repair_package
-from raw_patch_checksum_profiles import VY_IMAGE_SIZE, VY_OSID_OFFSET, VY_OSID, VY_PROGRAM_ID_OFFSET
+from raw_patch_checksum_profiles import (
+    VY_IMAGE_SIZE, VY_OSID_OFFSET, VY_OSID, VY_PROGRAM_ID_OFFSET,
+    verify_holden_vy_060a_92118883_additive16 as actual_verify,
+)
 
 
 def source():
@@ -47,6 +52,63 @@ class OptimizedTests(unittest.TestCase):
             self.assertTrue((target/'receipt.json').exists())
             with self.assertRaises(FileExistsError):
                 write_repair_package(original,target,expected_sha256=h)
+
+    def test_actual_verifier_context_phases(self):
+        data=source();phases=[]
+        def verify(image,context):
+            phases.append(context['phase'])
+            return actual_verify(image,context)
+        with tempfile.TemporaryDirectory() as tmp:
+            original=Path(tmp)/'source.bin';original.write_bytes(data)
+            with patch.object(adapter,'verify_holden_vy_060a_92118883_additive16',verify):
+                write_repair_package(original,Path(tmp)/'out',expected_sha256=hashlib.sha256(data).hexdigest())
+        self.assertEqual(phases,['input','output','output'])
+
+    def test_final_verifier_mutation_never_publishes_receipt(self):
+        for victim in ('source','output'):
+            with self.subTest(victim=victim),tempfile.TemporaryDirectory() as tmp:
+                data=source();original=Path(tmp)/'source.bin';original.write_bytes(data)
+                output=Path(tmp)/'out';calls=[]
+                def verify(image,context):
+                    calls.append(context['phase'])
+                    result=actual_verify(image,context)
+                    if len(calls)==3:
+                        target=original if victim=='source' else output/'source.checksum-copy.bin'
+                        altered=bytearray(target.read_bytes());altered[0x2000]^=1
+                        target.write_bytes(altered)
+                    return result
+                with patch.object(adapter,'verify_holden_vy_060a_92118883_additive16',verify):
+                    with self.assertRaisesRegex(ChecksumRepairCopyError,'before receipt publication'):
+                        write_repair_package(original,output,expected_sha256=hashlib.sha256(data).hexdigest())
+                self.assertFalse((output/'receipt.json').exists())
+
+    def test_partial_receipt_failure_is_not_final(self):
+        data=source()
+        def fail(value,stream,**kwargs):
+            stream.write('{')
+            raise OSError('partial receipt')
+        with tempfile.TemporaryDirectory() as tmp:
+            original=Path(tmp)/'source.bin';original.write_bytes(data)
+            output=Path(tmp)/'out'
+            with patch.object(adapter.json,'dump',fail):
+                with self.assertRaisesRegex(OSError,'partial receipt'):
+                    write_repair_package(original,output,expected_sha256=hashlib.sha256(data).hexdigest())
+            self.assertFalse((output/'receipt.json').exists())
+            self.assertEqual(original.read_bytes(),data)
+
+    def test_receipt_collision_preserved(self):
+        data=source();actual_link=adapter.os.link
+        def collide(pending,final):
+            Path(final).write_bytes(b'preserve collision')
+            return actual_link(pending,final)
+        with tempfile.TemporaryDirectory() as tmp:
+            original=Path(tmp)/'source.bin';original.write_bytes(data)
+            output=Path(tmp)/'out'
+            with patch.object(adapter.os,'link',collide):
+                with self.assertRaises(FileExistsError):
+                    write_repair_package(original,output,expected_sha256=hashlib.sha256(data).hexdigest())
+            self.assertEqual((output/'receipt.json').read_bytes(),b'preserve collision')
+            self.assertEqual(original.read_bytes(),data)
 
 
 if __name__=='__main__':unittest.main()

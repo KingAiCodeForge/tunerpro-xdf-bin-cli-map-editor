@@ -55,7 +55,8 @@ def test_repair_produces_exact_two_byte_checksum_copy():
     assert result[VY_PROGRAM_ID_OFFSET]==original[VY_PROGRAM_ID_OFFSET]==0xAA
     assert result[VY_OSID_OFFSET:VY_OSID_OFFSET+4]==original[VY_OSID_OFFSET:VY_OSID_OFFSET+4]
     assert int.from_bytes(result[0x4006:0x4008],'big') == reference_sum(original)
-    assert verify_holden_vy_060a_92118883_additive16(result,VY_CHECKSUM_CONTRACT)['valid']
+    assert verify_holden_vy_060a_92118883_additive16(
+        result, dict(VY_CHECKSUM_CONTRACT, phase='output'))['valid']
     assert original[0x4006:0x4008] != result[0x4006:0x4008]
     assert receipt['source_sha256']==sha(original)
     assert receipt['output_sha256']==sha(result)
