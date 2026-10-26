@@ -3,7 +3,7 @@
 **Date:** 25 October 2026 (ACDT)  
 **Status:** Proposed integration, documentation only. This is not a live-tuning feature announcement.
 
-The CLI Editor is a deterministic XDF/BIN file editor, not a real-time ECU interface or flasher. On `main`, single-operation guarded edits, reads, preflight and diffs are available within the documented limits. [Draft PR #10](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/pull/10) contains a still-unmerged transactional batch-plan candidate (`kingai.xdf-batch-plan.v1`), not a release. ADX/XDL import, automated log-to-cell correlation, live communication, checksum repair and flashing are not implemented in this public editor.
+The CLI Editor is a deterministic XDF/BIN file editor, not a real-time ECU interface or flasher. The unreleased 1.3.0a1 source integrates the transactional batch-plan candidate (`kingai.xdf-batch-plan.v1`), mock-only adapter CLI and a separate opt-in exact VY checksum review-copy utility; see [current README](../README.md). This is not a stable release. ADX/XDL import, automated log-to-cell correlation, live communication, general checksum repair and flashing remain unimplemented.
 
 The following wording is preserved **verbatim** as requested, including its conversational phrasing and illustrative value. It describes the intended division of labour, not verified calibration advice or promises of currently implemented features.
 

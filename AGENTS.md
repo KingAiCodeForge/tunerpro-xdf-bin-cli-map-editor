@@ -7,8 +7,10 @@ terminal-enabled assistants working in this repository.
 
 This project operates on local ECU calibration files using a TunerPro XDF
 definition and a corresponding raw BIN. The CLI is a file inspection and
-bounded editing tool. It is not an ECU flasher, checksum repair tool,
-calibration correctness guarantee, or engine safety certification.
+bounded editing tool. It is not an ECU flasher, general checksum repair system,
+calibration correctness guarantee, or engine safety certification. The separate
+opt-in VY checksum-copy utility supports one strict research-review profile;
+never invoke it automatically after an edit or infer flash eligibility from it.
 
 A matching file name, ECU family, or successful parse is **not** proof that
 a particular XDF correctly describes the BIN. Treat addresses, units,
@@ -36,8 +38,10 @@ the exact software identity and independent evidence.
    approval file, signature or repeated confirmation. The human need not know
    an internal map ID: resolve it using verified exact-target guidance and
    show the selection and rationale. Ask if material choices remain unresolved.
-   On current main, write one supported operation to a new output file using
-   `--autosave --output-dir`; this instruction does not enable batch.
+   This unreleased 1.3.0a1 source also supports multi-object CSV or hash-pinned
+   JSON `batch` plans: run the read-only preview first, then create one new BIN
+   using `--autosave --output-dir`. This does not enable batch in an older
+   released package or authorize publishing this candidate.
 6. Reload the output, run preflight where applicable and compare before and
    after BINs. Confirm the output size, hashes, expected changed bytes and
    audit logs. Report unexpected or unexplained differences.
@@ -46,8 +50,10 @@ the exact software identity and independent evidence.
    testing are separate responsibilities.
 8. Do not upload customer files, proprietary definitions or datalogs to a
    third-party service without the file owner's authorisation.
-9. Do not use disabled `batch`, `port`, or standalone `save` commands.
-   Engineering inverses are limited to proven affine and narrow `K/X` forms.
+9. Do not use disabled `port` or standalone `save` commands. CSV/JSON `batch`
+   stages multiple edits, detects byte conflicts and validates every edited
+   object against the final image before saving. Engineering inverses remain
+   limited to proven affine and narrow `K/X` forms.
    Other nonlinear inverses, floats, unsupported layouts and scoped math
    writes fail closed; do not bypass those restrictions.
 
@@ -63,6 +69,8 @@ kingai-map-editor list-maps --xdf definition.xdf --bin original.bin
 kingai-map-editor show-map --xdf definition.xdf --bin original.bin --map "Exact table title"
 kingai-map-editor show-scalar --xdf definition.xdf --bin original.bin --name "Exact scalar title"
 kingai-map-editor export --xdf definition.xdf --bin original.bin --output-dir inspection
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --csv reviewed-edits.csv
+kingai-map-editor batch --xdf definition.xdf --bin original.bin --plan-json exact-pair-edits.json --json
 ```
 
 All filenames and titles above are placeholders. The tool must be executed
@@ -76,6 +84,13 @@ and storage meet the supported constraints:
 kingai-map-editor edit-scalar --xdf definition.xdf --bin original.bin --name "Exact scalar title" --value 10 --autosave --output-dir reviewed_output
 kingai-map-editor diff --bin-a original.bin --bin-b reviewed_output/REPLACE_WITH_ACTUAL_OUTPUT.bin --xdf definition.xdf
 ```
+
+Batch plans may include exact XDF unique IDs, XDF storage addresses and
+expected old raw values to prevent ambiguous or stale edits. The JSON plan
+requires exact BIN/XDF SHA-256 values and emits a structured error when
+--json is requested. Record the plan SHA-256 too. The pinned Exporter does
+not expose flag unique IDs; flags may be selected by title, address and
+exact bit mask (flag_mask) when titles and byte addresses collide.
 
 Discover the actual output filename from the CLI response; do not assume it
 matches the placeholder. Review rounding, quantisation, offsets, log files
@@ -98,8 +113,22 @@ check. Validate representative, permissioned real XDF/BIN pairs against native
 TunerPro before any compatibility or release claims. No private firmware,
 customer data or proprietary XDFs should be committed to this repository.
 
-The current README release boundary governs supported commands. Later
-historical planning sections do not override it.
+If hosted Actions are unavailable, run source tests directly on a terminal
+with Python and pytest. For an offline pinned-Exporter wheel, use
+run_offline_editor_qualification.py, pass an independently checked wheel hash
+and keep the output folder private/outside the Git repository. The runner
+does not prove the wheel's source commit by inspection of its metadata; see
+docs/BATCH_HARDENING_OFFLINE_20261022.md.
+
+An optional --exporter-source clean exact-pin Git checkout now verifies the
+wheel's non-metadata payloads against committed source. Its receipt distinguishes
+that provenance from native TunerPro, real ECU and reproducible-build claims;
+see docs/REAL_PINNED_EXPORTER_QUALIFICATION_20261024.md.
+
+The README on the checked-out branch governs supported commands. The
+transactional batch feature is an unreleased candidate, not part of the
+previous published rc2 package. Later historical planning notes do not
+supersede verified command status.
 
 ## Guided tuning versus research
 

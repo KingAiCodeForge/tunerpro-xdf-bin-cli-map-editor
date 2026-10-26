@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kingai-tunerpro-map-editor"
-version = "1.2.0rc2"
+version = "1.3.0a1"
 description = "Offline XDF/BIN inspection and bounded integer edits with audit logs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,9 +20,10 @@ test = ["pytest>=8,<10"]
 
 [project.scripts]
 kingai-map-editor = "cli_map_editor:main"
+kingai-checksum-copy = "checksum_repair_copy:main"
 
 [tool.setuptools]
-py-modules = ["cli_map_editor", "tunerpro_exporter_for_cli_editor_version", "raw_patch_manifest", "raw_patch_checksum_profiles", "porting_templates", "build_portable_bundle", "portable_install"]
+py-modules = ["cli_map_editor", "transactional_batch", "batch_plan_snapshot", "batch_readback", "tunerpro_exporter_for_cli_editor_version", "raw_patch_manifest", "raw_patch_checksum_profiles", "porting_templates", "build_portable_bundle", "portable_install", "mock_hardware_adapter", "checksum_repair_copy"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]
