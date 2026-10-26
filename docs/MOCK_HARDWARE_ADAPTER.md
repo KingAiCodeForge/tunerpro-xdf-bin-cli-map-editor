@@ -34,6 +34,24 @@ The optional JSON receipt is written to a **new file only**; existing reports, i
 
 SHA-256 is an identity/integrity binding relative to a trusted source, **not** an operator signature or physical target authentication. An evidence receipt is not permission to flash, program, burn, write NVRAM or update a ROM emulator.
 
+### Windows path/descriptor timestamp compatibility — 26 October 2026
+
+The local review reproduced valid unchanged synthetic inputs being refused on
+Windows/Python 3.13.5 because `Path.stat()` and `os.fstat()` returned different
+`st_ctime_ns` values. This matches the upstream
+[CPython issue](https://github.com/python/cpython/issues/157671); the
+[Python documentation](https://docs.python.org/3.13/library/os.html#os.stat_result.st_ctime_ns)
+also marks Windows `st_ctime_ns` as deprecated with evolving semantics.
+
+Admission now compares device, inode, size and modification time across the
+path and descriptor APIs. Full metadata stamps, **including ctime**, must still
+remain unchanged separately for path-before/path-after and descriptor-before/
+descriptor-after. This avoids treating different timestamp meanings as a race
+without dropping metadata-only mutation detection. Deterministic regressions
+cover stable cross-API differences, each API's ctime drift, identity mismatches
+and final-path replacement. These are best-effort checks, not an atomic snapshot
+or permission to trust a concurrently writable image for hardware delivery.
+
 ## How someone forking this project should extend it
 
 1. Fork/clone the MIT repository and work on a separate branch. Run the `pytest`/`unittest` checks on synthetic inputs first.

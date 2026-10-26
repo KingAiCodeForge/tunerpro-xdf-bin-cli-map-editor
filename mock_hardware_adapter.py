@@ -50,11 +50,18 @@ def _canonical(value: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
-def _stamp(info: os.stat_result) -> tuple[int, int, int, int, int]:
+def _identity(info: os.stat_result) -> tuple[int, int, int, int]:
+    """Fields with comparable path-stat and descriptor-stat semantics."""
     return (
         info.st_dev, info.st_ino, info.st_size,
-        info.st_mtime_ns, info.st_ctime_ns,
+        info.st_mtime_ns,
     )
+
+
+def _stamp(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    # Windows can expose creation time via stat and change time via fstat.
+    # Keep ctime change detection within each API, not across the two APIs.
+    return (*_identity(info), info.st_ctime_ns)
 
 
 def _bounded_digest(path: Path, expected_size: int) -> str:
@@ -76,7 +83,7 @@ def _bounded_digest(path: Path, expected_size: int) -> str:
     try:
         with path.open("rb") as source:
             fd_before = os.fstat(source.fileno())
-            if _stamp(fd_before) != _stamp(initial_path):
+            if _identity(fd_before) != _identity(initial_path):
                 raise AdapterRefusal("input image changed before its read began")
             while True:
                 chunk = source.read(1024 * 1024)
@@ -92,8 +99,8 @@ def _bounded_digest(path: Path, expected_size: int) -> str:
         raise AdapterRefusal(f"input image read failed: {exc}") from exc
     if observed_bytes != expected_size:
         raise AdapterRefusal("input image truncated during read")
-    if not (_stamp(initial_path) == _stamp(fd_before) ==
-            _stamp(fd_after) == _stamp(final_path)):
+    if not (_stamp(initial_path) == _stamp(final_path) and
+            _stamp(fd_before) == _stamp(fd_after)):
         raise AdapterRefusal("input image changed during read")
     return digest.hexdigest()
 
