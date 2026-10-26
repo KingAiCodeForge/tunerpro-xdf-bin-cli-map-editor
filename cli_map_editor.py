@@ -26,6 +26,8 @@
    diff         Show byte-level diff, optionally attributed through a TunerPro XDF
    apply-raw-patch   Apply an exact-hash, reversible raw-byte patch manifest
    verify-raw-patch  Verify and stage a raw-byte patch entirely in memory
+   adapter-probe  Show mock-only hardware adapter capabilities; no device I/O
+   adapter-preview  Source-hash-bound mock BIN preview; no hardware upload
 
  Author:       Jason King
  GitHub:       https://github.com/KingAiCodeForge
@@ -67,6 +69,7 @@ from tunerpro_xdf.xdf_equations import EquationError, inverse_affine, inverse_re
 from tunerpro_xdf.xdf_values import read_integer, write_integer
 from raw_patch_checksum_profiles import TRUSTED_CHECKSUM_VERIFIERS
 from transactional_batch import run_batch
+from mock_hardware_adapter import register_subcommands as register_mock_adapter_commands
 from raw_patch_manifest import (
     PatchManifestError,
     apply_patch_manifest,
@@ -1994,6 +1997,8 @@ Examples:
   %(prog)s verify-raw-patch --bin fw.bin --manifest patch.json
   %(prog)s apply-raw-patch --bin fw.bin --manifest patch.json --output patched.bin
   %(prog)s apply-raw-patch --reverse --bin patched.bin --manifest patch.json --output restored.bin
+  %(prog)s adapter-probe
+  %(prog)s adapter-preview --bin synthetic.bin --expected-bin-sha256 SHA256 --expected-size 512 --target-id synthetic
 """
     )
     sp = p.add_subparsers(dest='command', required=True)
@@ -2180,6 +2185,9 @@ Examples:
         help='Require patched_sha256 and restore the exact base image',
     )
     p_patch.set_defaults(func=cmd_apply_raw_patch)
+
+    # Optional read-only reference adapter; shares its argument registry with standalone mock.
+    register_mock_adapter_commands(sp)
 
     args = p.parse_args()
     try:
