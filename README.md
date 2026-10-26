@@ -282,10 +282,13 @@ Issues and regression fixtures are welcome for **specific legal XDF/BIN combinat
 
 ## Further documentation
 
+**Contributors welcome:** You can [fork this MIT-licensed editor, open issues, review PRs or propose a focused change](CONTRIBUTING.md). The separate [bring-your-own hardware, checksum and flasher adapter roadmap](docs/HARDWARE_CHECKSUM_FLASH_PLUGIN_ROADMAP.md) explains the intended plugin contracts, existing verification-only examples and professional-use boundaries. Hardware communication, checksum repair and flashing are **not shipped** by this documentation.
+
 - [AI workflow background](AI_TUNING_PLAN.md)
 - [Holden research guide](HOLDEN_AI_TUNING_GUIDE.md)
 - [BMW MS42/MS43/MS43X research guide](BMW_MS42_MS43_MS43X_AI_TUNING_GUIDE.md)
 - [Legacy patch/formula rebuild register](PATCH_REBUILD_REGISTER.md)
+- [FlashOnline, NVRAM, chip burners, OBD/bench flash, real timing estimates and fork-your-own-adapter walkthrough](docs/FLASHONLINE_NVRAM_EPROM_AND_BYO_HARDWARE_GUIDE.md) (**proposed hardware integration, not shipped**)
 - [Public Universal Exporter](https://github.com/KingAiCodeForge/TunerPro-XDF-BIN-Universal-Exporter)
 - [TunerPro official site](https://www.tunerpro.net/)
 
