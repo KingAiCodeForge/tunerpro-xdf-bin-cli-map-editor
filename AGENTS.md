@@ -7,8 +7,10 @@ terminal-enabled assistants working in this repository.
 
 This project operates on local ECU calibration files using a TunerPro XDF
 definition and a corresponding raw BIN. The CLI is a file inspection and
-bounded editing tool. It is not an ECU flasher, checksum repair tool,
-calibration correctness guarantee, or engine safety certification.
+bounded editing tool. It is not an ECU flasher, general checksum repair system,
+calibration correctness guarantee, or engine safety certification. The separate
+opt-in VY checksum-copy utility supports one strict research-review profile;
+never invoke it automatically after an edit or infer flash eligibility from it.
 
 A matching file name, ECU family, or successful parse is **not** proof that
 a particular XDF correctly describes the BIN. Treat addresses, units,
@@ -36,7 +38,7 @@ the exact software identity and independent evidence.
    approval file, signature or repeated confirmation. The human need not know
    an internal map ID: resolve it using verified exact-target guidance and
    show the selection and rationale. Ask if material choices remain unresolved.
-   This local unreleased candidate also supports multi-object CSV or hash-pinned
+   This unreleased 1.3.0a1 source also supports multi-object CSV or hash-pinned
    JSON `batch` plans: run the read-only preview first, then create one new BIN
    using `--autosave --output-dir`. This does not enable batch in an older
    released package or authorize publishing this candidate.

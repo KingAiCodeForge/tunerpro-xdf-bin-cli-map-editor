@@ -1,5 +1,60 @@
 # Editor integration and qualification — 20 October 2026
 
+## 26 October continuation: 1.3.0a1 development consolidation
+
+This is unreleased alpha source, not a stable release, native TunerPro parity,
+real-ECU compatibility or hardware/flash qualification. Earlier dated sections
+below remain historical evidence for their exact source and are not overwritten.
+
+| Input | Exact retained source | Integration decision |
+| --- | --- | --- |
+| Transactional PR #10 | `5ee15d3ca185c5b684e3baee48d0e033dc7db4ae` plus local qualification `6fb65a30987b1fffe91e1e42ecafde5733e348a3` | Preserve batch preview/final-image checks, real-parser regressions and exact dependency provenance runner |
+| Main/docs #11/#12/#16 | Main through `3b49fbb36fc67a265cfcc2aaa7f11c74e69be6d6` | Keep guided workflow, founder vision and contributor/hardware roadmaps; refresh current source boundaries without deleting history |
+| Source-only simulation #14 | `3f0c40c5da4ef2f53c998356e04ce043d226060c` | Retain distinct transport scenarios, fixed synthetic target, receipt ID/schema; deliberately exclude from installed wheel and canonical adapter registration |
+| Canonical mock CLI #15 | `e324fe21e7ade316c477eb4ac6ba0430fec4a06f` plus repair `dd3d0745ac5809e002846a354f09cbc34647f684` | Keep installed read-only mock; fix Windows cross-API ctime mismatch without dropping each API's mutation checks |
+| Exact VY checksum-copy #13 | `03b6a5ee8a2fe901043998b3fcb16c7722809c6b` plus repair `5320fe6c03ecea3e970a112915622ccc4293be9c` | Use actual verifier contexts, bounded file snapshots and staged non-overwriting final receipt; keep separate opt-in utility, never auto-chain after batch |
+
+All inputs retain normal merge ancestry and meaningful variants. No source
+branch deletion, history rewrite, stable tag or replacement of earlier packages
+is part of this consolidation. Metadata/CLI version is **1.3.0a1**, distinct
+from previously published **1.2.0rc2**. The Exporter stays pinned to exact
+`e7c0ae86534791620ea0b843810f4980d24081d5`, not its same-version tag or newer main.
+
+### Reproduced defects and qualification scope
+
+PR15's original source intermittently refused unchanged Windows files because
+path-stat and descriptor-stat ctime semantics differ. The repair compares common
+identity across APIs and retains complete before/after checks within each API;
+five deterministic regressions precede the fix. The independent 1,000-file
+replay then accepts all unchanged sources, including observed differing ctimes.
+
+PR13's original source fails 14 of 28 actual-verifier tests because both output
+contexts lack required `phase`. Fixing that API use also exposes a final-verifier
+mutation window; source/output are now reread after staging the receipt. Partial
+JSON and collisions cannot publish a new final receipt. The checksum formula,
+OSID, ranges and bypass marker are unchanged. The checksum utility does not
+establish active ECU enforcement or flash readiness.
+
+Original tests/assertions are retained; the direct-verifier assertion is supplied
+the real API's required phase. New failure-injection and composition controls
+do not replace source/full-suite or installed-package qualification. Final
+combined qualification and its exact candidate identity must be recorded before
+promotion; individual prior suite counts are not a combined pass.
+
+Hosted Actions are account-billing-locked and did not execute. Do not report
+those red checks as a tested Python failure or claim a hosted/Linux/Python3.10
+pass. Native TunerPro, permissioned exact real-image replay, checksum/signature
+layers outside the one documented profile, hardware, recovery and vehicle
+qualification remain separate open gates. File race checks are bounded
+point-in-time evidence, not full hostile-filesystem or power-loss atomicity.
+
+Reproduce with the exact-pinned Exporter and the full source suite, build a new
+Editor wheel, verify all runtime payloads against source and installed files,
+run copied batch/mock/checksum tests outside the checkout, then exercise the
+actual installed console scripts with independently generated expected bytes.
+Keep logs/receipts private outside the repository; do not commit firmware,
+customer material, private machine paths or diagnostic environment artifacts.
+
 Version: **1.2.0rc1**, experimental, pinned to Exporter **3.7.5rc1** commit `e7c0ae86534791620ea0b843810f4980d24081d5`. This combines public source only. Native TunerPro, real-definition corpus replay, hardware and flashing remain unqualified. A skipped fixture is missing evidence.
 
 The [guard follow-up](EDITOR_GUARD_FOLLOWUP_20261020.md) continues this

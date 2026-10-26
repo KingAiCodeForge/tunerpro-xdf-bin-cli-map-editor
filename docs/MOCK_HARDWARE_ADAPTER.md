@@ -1,8 +1,8 @@
 # Mock hardware-adapter contract (NO real ECU communication)
 
-**Status:** software-only reference adapter. No live tuning, flash, ROM emulation, DLL loading, driver enumeration or physical device support is added. This is an independent code PR; do not confuse it with the unmerged batch-plan PR #10, checksum repair-to-copy PR #13 or the hardware roadmap PR #12.
+**Status:** software-only reference adapter in the unreleased 1.3.0a1 development integration. No live tuning, flash, ROM emulation, DLL loading, driver enumeration or physical device support is added. Batching, the separate checksum-copy utility and the source-only transport-scenario reference remain distinct operations; this mock does not call or replace them.
 
-The released CLI stays the sole entry point for both humans and agents. `mock_hardware_adapter.register_subcommands()` installs **two new read-only operations** on `kingai-map-editor` using the same declaration that powers its standalone mock smoke CLI. The mock never uploads or reads an ECU, even if a target ID is supplied. It uses Python stdlib only; no peripheral permissions are needed.
+The development Editor CLI is the canonical adapter entry point for both humans and agents. `mock_hardware_adapter.register_subcommands()` installs **two new read-only operations** on `kingai-map-editor` using the same declaration that powers its standalone mock smoke CLI. The mock never uploads or reads an ECU, even if a target ID is supplied. It uses Python stdlib only; no peripheral permissions are needed.
 
 ## Try it on a synthetic or operator-owned BIN
 
@@ -60,6 +60,6 @@ or permission to trust a concurrently writable image for hardware delivery.
 4. Real write-capable device tools need a *different*, explicitly permissioned interface and independent bench/recovery checks before activation. Do not bolt a flasher method onto the read-only mock or treat a valid preview receipt as authorization.
 5. Submit the smallest independently testable PR with licence/provenance and a clear separation of `implemented`, `simulated`, `hardware tested` and `unverified` status. Vendor DLLs, proprietary firmware and customer data stay out of the public repository without distribution permission.
 
-See the [full FlashOnline/NVRAM/EPROM fork guide](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/pull/12), and [CONTRIBUTING](https://github.com/KingAiCodeForge/tunerpro-xdf-bin-cli-map-editor/blob/chatgpt/contributor-hardware-checksum-adapter-guide-20261025/CONTRIBUTING.md). Those remain separate proposed-documentation PRs until merged.
+See the [full FlashOnline/NVRAM/EPROM fork guide](FLASHONLINE_NVRAM_EPROM_AND_BYO_HARDWARE_GUIDE.md) and [CONTRIBUTING](../CONTRIBUTING.md), adopted from documentation PR #12. The [transport-scenario reference](MOCK_TRANSPORT_ADAPTER_CONTRACT_R1.md) keeps its distinct IDs/schema and source-only no-write/scenario contract; it is deliberately not registered or installed as another Editor adapter.
 
 **ChatGPTz idea 💡:** the mock capability/receipt contract is AI-authored implementation inspired by the user's requested bring-your-own hardware system, PR #12's adapter roadmap, and the Editor's existing exact-source identity and fail-closed patterns. It is an implementation of a *safe simulated interface*, not a working physical interface.

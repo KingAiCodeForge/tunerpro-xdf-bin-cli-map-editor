@@ -1,5 +1,13 @@
 # Bring-your-own checksum, logging, live-calibration and flasher adapters
 
+**26 October development-source update:** 1.3.0a1 combines transactional batch
+preview/save, the mock-only canonical adapter commands and a separate narrow
+VY checksum review-copy utility. See [README](../README.md) and
+[integration evidence](INTEGRATION_20261020.md). The 25-Oct matrix below records
+the pre-integration baseline; it does not disable current source capabilities.
+The generic plugin API, real hardware, DLL host, live tuning and flashing remain
+proposals. Published rc2 packages and historical records are not replaced.
+
 **KingAI Pty Ltd / KingAiCodeForge | 25 October 2026 (ACDT)**  
 **Status:** Public integration design and invitation for contributions. **No hardware, DLL, checksum repair, online calibration or flash adapter is enabled by this document.**
 

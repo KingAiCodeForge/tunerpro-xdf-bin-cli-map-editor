@@ -61,10 +61,10 @@ The goal is a closed-loop tuning workflow: **log → analyze → adjust → flas
 
 ---
 
-## Part 1: Local candidate capability boundary (October 2026)
+## Part 1: Development-source capability boundary (October 2026)
 
 This checked-out integration combines the transactional-batch candidate with
-newer guided-workflow documentation. It is local and unreleased; the previous
+newer guided-workflow documentation as version 1.3.0a1. It is unreleased; the previous
 published v1.2.0rc2 package's disabled batch command is not enabled by this plan.
 
 | Capability | Status | Command |
@@ -434,7 +434,7 @@ AI ACTIONS:
 4. Propose the smallest bounded cell region, with pass and abort criteria;
    do not derive a change from `knock_retard + margin`
 5. Apply the resolved, human-directed scope with supported single-edit commands;
-   batch CSV application remains a development feature, not current main
+   batch CSV application is available in 1.3.0a1 development source, not the published rc2 package
 6. diff the exact parent/candidate and fail on any undeclared byte
 7. preflight/export the candidate and issue a review-only receipt
 ```

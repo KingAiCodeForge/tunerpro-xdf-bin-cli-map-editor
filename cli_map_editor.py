@@ -76,7 +76,7 @@ from raw_patch_manifest import (
     verify_patch_manifest,
 )
 
-__version__ = "1.2.0rc2"
+__version__ = "1.3.0a1"
 __author__ = "Jason King"
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,12 @@
 # FlashOnline, EPROM/NVRAM, EEPROM, in-car flashing and bring-your-own hardware integrations
 
+**26 October source reconciliation:** the exact 25-Oct main/release/PR statuses
+below are retained history. Unreleased 1.3.0a1 now composes transactional batching,
+mock-only adapter commands and one separate exact VY checksum review-copy utility;
+consult [README](../README.md) for the current command boundary. This does not
+implement the proposed generic APIs, vendor hardware or flashing described here,
+and does not modify the earlier published rc2 package.
+
 **KingAI Pty Ltd / KingAiCodeForge · 25 October 2026 (ACDT)**  
 **Audience:** experienced tuners, ECU developers, hardware/plugin authors, reviewers and people cloning or forking the MIT-licensed [KingAI CLI Map Editor](../README.md).  
 **Document status:** technical integration guide, vendor-grounded examples, **not a working hardware plugin, flash command or timing benchmark**.

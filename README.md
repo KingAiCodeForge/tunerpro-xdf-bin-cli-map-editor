@@ -2,8 +2,8 @@
 
 **Offline XDF/BIN inspection, bounded calibration edits and reproducible byte-level review.**
 
-- **Version:** **1.2.0rc2** prerelease base with a **local, unreleased transactional-batch integration candidate**. The previous released rc2 package does not contain this feature; no stable release or remote promotion is claimed.
-- **Documentation reconciliation:** 25 October 2026 (ACDT).
+- **Version:** **1.3.0a1**, unreleased development integration. The previous published **1.2.0rc2** package is preserved and does not contain these batch/adapter additions. A source merge is not a stable release or hardware qualification.
+- **Documentation reconciliation:** 26 October 2026 (ACDT).
 - **Author:** KingAI Pty Ltd / KingAiCodeForge.
 - **Status:** Research and engineering tooling. **Not a flasher, autonomous tuner or vehicle-safety approval.**
 
@@ -17,7 +17,9 @@ See [Guided tuning and research workflow](docs/GUIDED_TUNING_AND_RESEARCH.md) fo
 
 **Future, not implemented:** [ADX/XDL log corrections, natural-language tuning prompts and live-tuning roadmap](docs/ADX_XDL_PROMPT_TUNING_AND_LIVE_ROADMAP.md) describes the proposed staged integration, while the CLI remains a deterministic file editor.
 
-**Development branch capability, not on the released main branch:** The [mock hardware-adapter reference](docs/MOCK_HARDWARE_ADAPTER.md) adds `adapter-probe` and `adapter-preview` to the existing CLI. These perform only local source-image SHA-256/size checking, return deterministic JSON receipts and **never contact or write hardware**. They are not FlashOnline, NVRAM, checksum repair, a flasher, or live tuning. A target label supplied by an operator is not proof of connected ECU identity.
+**Development-source capabilities, not a published release:** The [mock hardware-adapter reference](docs/MOCK_HARDWARE_ADAPTER.md) adds `adapter-probe` and `adapter-preview` to the existing CLI. These perform only local source-image SHA-256/size checking, return deterministic JSON receipts and **never contact or write hardware**. They are not FlashOnline, NVRAM, a flasher, or live tuning. A target label supplied by an operator is not proof of connected ECU identity. A distinct [source-only transport reference](docs/MOCK_TRANSPORT_ADAPTER_CONTRACT_R1.md) preserves synthetic timeout/disconnect/ambiguous-device scenarios and its separate receipt schema; it is not installed or discovered by the Editor.
+
+The separate opt-in `kingai-checksum-copy` utility supports only the [exact VY $060A review-copy profile](docs/VY_060A_CHECKSUM_REPAIR_COPY_R1.md). It is **not** called automatically by edits or batching, never enables the `0xAA` bypass gate and is not general checksum repair or flash approval.
 
 ## Who operates this tool?
 
@@ -27,7 +29,7 @@ The agent is an **operator of deterministic software**, not an oracle for ECU co
 
 **How it differs from conventional editors:** TunerPro already supports rich XDF math, smoothing, interpolation, graphing and (with compatible hardware) RT logging. Commercial tools often provide integrated vehicle definitions, logging and flashing. KingAI's proposed value is a **source-inspectable, text/JSON/CSV-friendly, headless interface for coding agents**, with explicit failures and byte-level receipts. It is not currently a replacement for TunerPro's full parser, native interpolation, vehicle support or flashing.
 
-| A person asks the agent | Supported action on this public release | Important restriction |
+| A person asks the agent | Supported action on this development source | Important restriction |
 | --- | --- | --- |
 | “What's in this calibration?” | Inspect XDF/BIN, preflight, list/show/export supported items | A definition title or plausible value is not proof of the active control |
 | “What changed between stock and modified?” | Compare BIN bytes and optionally attribute changes through the XDF | Keep unattributed bytes in the review |
@@ -48,7 +50,7 @@ python -m pip install .
 kingai-map-editor --help
 ```
 
-The package is `kingai-tunerpro-map-editor==1.2.0rc2`. Its `pyproject.toml` pins the **Universal Exporter 3.7.5rc1** source to exact tested commit `e7c0ae86534791620ea0b843810f4980d24081d5`. `tunerpro_exporter_for_cli_editor_version.py` is a compatibility entry point importing that installed package, **not a second bundled/cloned parser**. No sibling Exporter checkout is required for the installed CLI.
+The development package is `kingai-tunerpro-map-editor==1.3.0a1`. Its `pyproject.toml` pins the **Universal Exporter 3.7.5rc1** source to exact tested commit `e7c0ae86534791620ea0b843810f4980d24081d5`. `tunerpro_exporter_for_cli_editor_version.py` is a compatibility entry point importing that installed package, **not a second bundled/cloned parser**. No sibling Exporter checkout is required for the installed CLI. A newer Exporter main or same-version tag is not a substitute for this exact pin.
 
 RC2 supersedes RC1 for editing. RC1 accepted a range whose later cell changed
 an earlier cell's conversion dependency, and could accept a numerically inferior
@@ -74,9 +76,11 @@ An offline release bundle contains the exact Editor and Exporter wheels, checksu
 | `edit-flag` | Set/clear declared 8-bit masks without altering unrelated bits in the same byte | Requires `--autosave --output-dir`; mask and definition must be correct |
 | `verify-raw-patch`, `apply-raw-patch` | Check and apply/reverse strict v2, hash-bound byte manifests to **new** files | Static byte contract only; does not verify patch execution or flash readiness |
 | `batch` | Preview and optionally publish multi-row CSV table, scalar and flag edits into **one** audited new BIN | Validates final-image raw and engineering values, detects overlapping writes; parser's supported math/storage limitations still apply |
+| `adapter-probe`, `adapter-preview` | Deterministic mock descriptor and hash/size-bound local image preview; optional new JSON receipt | No device, DLL, upload, real ECU identity or hardware writes |
+| Separate `kingai-checksum-copy` utility | Opt-in read-only preview or checksum-only new review package for one strict VY profile | Only the stored checksum field may change; bypass state preserved; not automatically chained or flash-qualified |
 | `port`, standalone `save` | **Disabled; return an error** | No automatic map porting or unbound temporary saves |
 
-**Unsupported writes:** IEEE-754 float writes, nonlinear inverses outside the proven affine and narrow `K/X` classes, scoped per-cell XDF math, arbitrary/non-contiguous strides, automatic cross-ECU porting. Reciprocal zero targets and unsupported rearrangements fail closed; there is no numerical-search inverse fallback. Live ECU communication, checksum repair and flashing are unavailable. Synthetic success does not qualify any real ECU definition.
+**Unsupported writes:** IEEE-754 float writes, nonlinear inverses outside the proven affine and narrow `K/X` classes, scoped per-cell XDF math, arbitrary/non-contiguous strides, automatic cross-ECU porting. Reciprocal zero targets and unsupported rearrangements fail closed; there is no numerical-search inverse fallback. Live ECU communication, general checksum repair and flashing are unavailable. The separate narrow VY review-copy utility does not change those boundaries. Synthetic success does not qualify any real ECU definition.
 
 ## Exact-pair fixture gate
 

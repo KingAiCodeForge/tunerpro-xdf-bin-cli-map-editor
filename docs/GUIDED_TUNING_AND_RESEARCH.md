@@ -2,6 +2,13 @@
 
 Updated 23 October 2026 (ACDT). Documentation only; no new CLI capability.
 
+**26 October source update:** unreleased 1.3.0a1 integrates transactional batch
+preview/save, the mock-only adapter CLI and a separate opt-in exact VY checksum
+review-copy utility. The exact rc2/main checkpoint in section 4 below is retained
+as dated history, not the current source capability list. Follow [README](../README.md)
+and [integration evidence](INTEGRATION_20261020.md). No native/real-ECU/hardware
+or stable-release qualification follows from these additions.
+
 **Operator warning:** AI can select the wrong maps, misinterpret definitions or propose unsuitable values. Do not use this tool for tuning unless you understand the ECU/platform, or are working with a competent tuner who does. Independently verify the exact BIN/XDF pairing, selected controls and resulting changes. A successful edit does not prove calibration safety or flash readiness.
 
 ## 1. Human direction, not unnecessary ceremony
